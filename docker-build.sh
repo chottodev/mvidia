@@ -44,9 +44,9 @@ Options:
   --target NAME       Собрать только api-user или api-admin (можно повторять)
   -h, --help          Справка
 
-Образы на Hub:
-  <user>/<prefix>-api-user:<tag>
-  <user>/<prefix>-api-admin:<tag>
+Образы на Hub (в каждом: API + собранный UI):
+  <user>/<prefix>-api-user:<tag>   — клиент, порт 3001
+  <user>/<prefix>-api-admin:<tag>  — админ, порт 3002
 EOF
 }
 

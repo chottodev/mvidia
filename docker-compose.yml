@@ -6,34 +6,43 @@ services:
     volumes:
       - mongo_data:/data/db
 
-  api-user:
+  # Клиент: API + публичный UI → http://localhost:3001
+  user:
     build:
       context: .
       target: api-user
+      args:
+        USER_PUBLIC_SITE_URL: http://localhost:3001
     ports:
       - "3001:3001"
     environment:
       MONGODB_URI: mongodb://mongo:27017/mvidia
       UPLOAD_DIR: /data/uploads
-      API_USER_PORT: "3001"
+      SERVE_UI: "true"
+      UI_DIST_PATH: /app/ui
+      PORT: "3001"
     volumes:
       - uploads:/data/uploads
     depends_on:
       - mongo
 
-  api-admin:
+  # Админ: API + админ UI → http://localhost:3002
+  admin:
     build:
       context: .
       target: api-admin
+      args:
+        USER_PUBLIC_SITE_URL: http://localhost:3001
     ports:
       - "3002:3002"
     environment:
       MONGODB_URI: mongodb://mongo:27017/mvidia
       UPLOAD_DIR: /data/uploads
-      API_ADMIN_PORT: "3002"
+      SERVE_UI: "true"
+      UI_DIST_PATH: /app/ui
+      PORT: "3002"
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: change-me
-      ADMIN_CORS_ORIGIN: http://localhost:5174
     volumes:
       - uploads:/data/uploads
     depends_on:

@@ -4,8 +4,8 @@
   "private": true,
   "main": "src/server.js",
   "scripts": {
-    "dev": "node src/server.js",
-    "start": "node src/server.js"
+    "dev": "SERVE_UI=1 node src/server.js",
+    "start": "SERVE_UI=1 node src/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

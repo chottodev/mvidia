@@ -5,8 +5,13 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:api-user": "npm run dev -w api-user",
-    "dev:api-admin": "npm run dev -w api-admin",
+    "build:ui": "npm run build -w web && npm run build -w web-admin",
+    "dev:user": "npm run dev -w api-user",
+    "dev:admin": "npm run dev -w api-admin",
+    "start:user": "npm run build -w web && npm run start -w api-user",
+    "start:admin": "npm run build -w web-admin && npm run start -w api-admin",
+    "dev:api-user": "npm run dev:user",
+    "dev:api-admin": "npm run dev:admin",
     "dev:web": "npm run dev -w web",
     "dev:web-admin": "npm run dev -w web-admin"
   },

@@ -158,26 +158,30 @@
 | Пакет | Назначение |
 |-------|------------|
 | `packages/db` | Mongoose-модель `Video`, `connect(uri)` |
-| `packages/api-user` | `POST /videos`, `GET /videos/{publicId}`, `GET /videos/{publicId}/file` (Range), CORS `*`, Swagger UI: `/api-docs` |
-| `packages/api-admin` | `GET /videos`, `DELETE /videos/{publicId}`, HTTP Basic на всех маршрутах, `/api-docs` |
-| `packages/web` | Vue 3: `/` загрузка, `/v/:publicId` плеер; в dev без `VITE_*` — прокси на `api-user` |
-| `packages/web-admin` | Vue 3: вход Basic, таблица, пагинация; в dev — прокси на `api-admin` |
+| `packages/api-user` | Публичный API + раздача **`packages/web/dist`** (один процесс, `SERVE_UI=1`) |
+| `packages/api-admin` | Админ API + раздача **`packages/web-admin/dist`** (один процесс) |
+| `packages/web` | Исходники Vue; сборка `npm run build -w web` |
+| `packages/web-admin` | Исходники админки; сборка `npm run build -w web-admin` |
 
-### Локальный запуск
+### Локальный запуск (два процесса)
 
 1. MongoDB на `localhost:27017` (или `docker compose up -d mongo`).
-2. `cp .env.example .env` и задайте **`ADMIN_PASSWORD`** (и при необходимости `MONGODB_URI`, `UPLOAD_DIR` — по умолчанию каталог **`uploads/` в корне репозитория**).
-3. В четырёх терминалах из корня репозитория:
-   - `npm run dev:api-user`
-   - `npm run dev:api-admin`
-   - `npm run dev:web` → http://localhost:5173
-   - `npm run dev:web-admin` → http://localhost:5174  
-   При необходимости задайте `VITE_API_USER_BASE_URL`, `VITE_API_ADMIN_BASE_URL`, `VITE_PUBLIC_SITE_URL` вместо прокси Vite.
+2. `cp .env.example .env` и задайте **`ADMIN_PASSWORD`**.
+3. Один раз соберите UI (или используйте `start:*`, они собирают сами):
+   ```bash
+   npm run build -w web
+   npm run build -w web-admin
+   ```
+4. Два терминала:
+   - **Клиент (API + UI):** `npm run dev:user` → http://localhost:3001/
+   - **Админ (API + UI):** `npm run dev:admin` → http://localhost:3002/ (логин/пароль из `.env`)
+
+Альтернатива с hot-reload фронта (четыре процесса): `npm run dev:web` + `SERVE_UI=0 npm run dev -w api-user` и т.д.
 
 ### Docker
 
-- **`Dockerfile`**: стадия `build` (сборка `web` и `web-admin`), стадии `api-user` и `api-admin` для прод-запуска API.
-- **`docker-compose.yml`**: MongoDB + оба API с общим volume для файлов. Задайте `ADMIN_PASSWORD` в compose или через override.
+- **`Dockerfile`**: в образах **`api-user`** и **`api-admin`** уже встроены собранные UI.
+- **`docker-compose.yml`**: MongoDB + сервисы **`user`** (3001) и **`admin`** (3002), общий volume загрузок.
 - **`docker-build.sh`**: локальная сборка и push на Docker Hub:
   ```bash
   chmod +x docker-build.sh

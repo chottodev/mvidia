@@ -1,0 +1,44 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api-user:
+    build:
+      context: .
+      target: api-user
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/mvidia
+      UPLOAD_DIR: /data/uploads
+      API_USER_PORT: "3001"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      - mongo
+
+  api-admin:
+    build:
+      context: .
+      target: api-admin
+    ports:
+      - "3002:3002"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/mvidia
+      UPLOAD_DIR: /data/uploads
+      API_ADMIN_PORT: "3002"
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change-me
+      ADMIN_CORS_ORIGIN: http://localhost:5174
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+  uploads:

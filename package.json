@@ -1,0 +1,16 @@
+{
+  "name": "mvidia",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api-user": "npm run dev -w api-user",
+    "dev:api-admin": "npm run dev -w api-admin",
+    "dev:web": "npm run dev -w web",
+    "dev:web-admin": "npm run dev -w web-admin"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -59,7 +59,7 @@ async function main() {
     console.warn(`user UI не найден (${uiDist}), только API. Соберите: npm run build -w web`);
   }
 
-  const port = parseInt(process.env.PORT || process.env.API_USER_PORT || '3001', 10);
+  const port = parseInt(process.env.API_USER_PORT || '3001', 10);
   app.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`mvidia user (API + UI) http://127.0.0.1:${port}`);

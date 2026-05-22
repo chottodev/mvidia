@@ -94,7 +94,7 @@ async function main() {
     console.warn(`admin UI не найден (${uiDist}), только API. Соберите: npm run build -w web-admin`);
   }
 
-  const port = parseInt(process.env.PORT || process.env.API_ADMIN_PORT || '3002', 10);
+  const port = parseInt(process.env.API_ADMIN_PORT || '3002', 10);
   app.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`mvidia admin (API + UI) http://127.0.0.1:${port}`);

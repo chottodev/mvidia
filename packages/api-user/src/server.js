@@ -5,7 +5,7 @@ const cors = require('cors');
 const openapi = require('express-openapi');
 const { connect, Video } = require('db');
 const handlersModule = require('./handlers');
-const { mountSpa } = require('./serveUi');
+const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
 function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) return;
@@ -49,9 +49,8 @@ async function main() {
     errorMiddleware,
   });
 
-  const serveUi = process.env.SERVE_UI !== '0' && process.env.SERVE_UI !== 'false';
-  const uiDist =
-    process.env.UI_DIST_PATH || path.join(rootDir, 'packages/web/dist');
+  const serveUi = resolveServeUi();
+  const uiDist = resolveUiDist(rootDir, 'web');
   if (serveUi && mountSpa(app, uiDist)) {
     // eslint-disable-next-line no-console
     console.log(`user UI: ${uiDist}`);

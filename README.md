@@ -167,14 +167,11 @@
 
 1. MongoDB на `localhost:27017` (или `docker compose up -d mongo`).
 2. `cp .env.example .env` и задайте **`ADMIN_PASSWORD`**.
-3. Один раз соберите UI (или используйте `start:*`, они собирают сами):
-   ```bash
-   npm run build -w web
-   npm run build -w web-admin
-   ```
+3. Для локального prod-режима без Docker — один раз соберите UI: `npm run build:ui` (в образах Docker UI уже внутри).
 4. Два терминала:
-   - **Клиент (API + UI):** `npm run dev:user` → http://localhost:3001/
-   - **Админ (API + UI):** `npm run dev:admin` → http://localhost:3002/ (логин/пароль из `.env`)
+   - **Клиент:** `npm run dev:user` (разработка) или `npm run start:user` (только запуск, нужен `packages/web/dist`)
+   - **Админ:** `npm run dev:admin` или `npm run start:admin` (нужен `packages/web-admin/dist`)  
+   http://localhost:3001/ и http://localhost:3002/
 
 Альтернатива с hot-reload фронта (четыре процесса): `npm run dev:web` + `SERVE_UI=0 npm run dev -w api-user` и т.д.
 

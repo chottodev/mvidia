@@ -5,7 +5,7 @@ const cors = require('cors');
 const openapi = require('express-openapi');
 const { connect, Video } = require('db');
 const handlersModule = require('./handlers');
-const { mountSpa } = require('../../api-user/src/serveUi');
+const { mountSpa, resolveServeUi, resolveUiDist } = require('../../api-user/src/serveUi');
 
 function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) return;
@@ -67,7 +67,7 @@ async function main() {
   const app = express();
   app.disable('x-powered-by');
 
-  const serveUi = process.env.SERVE_UI !== '0' && process.env.SERVE_UI !== 'false';
+  const serveUi = resolveServeUi();
   if (!serveUi) {
     const adminOrigin = process.env.ADMIN_CORS_ORIGIN || 'http://localhost:5174';
     app.use(cors({ origin: adminOrigin }));
@@ -85,8 +85,7 @@ async function main() {
     errorMiddleware,
   });
 
-  const uiDist =
-    process.env.UI_DIST_PATH || path.join(rootDir, 'packages/web-admin/dist');
+  const uiDist = resolveUiDist(rootDir, 'web-admin');
   if (serveUi && mountSpa(app, uiDist)) {
     // eslint-disable-next-line no-console
     console.log(`admin UI: ${uiDist}`);

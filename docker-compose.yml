@@ -1,13 +1,11 @@
 # docker compose up --build
-# Переменные — в .env (см. .env.example)
+# Один образ mvidia; два контейнера — user (3001) и admin (3002). Настройки — в .env
 
 services:
   user:
-    build:
-      context: .
-      target: api-user
-      args:
-        USER_PUBLIC_SITE_URL: ${USER_PUBLIC_SITE_URL:-http://localhost:3001}
+    image: ${MVIDIA_IMAGE:-antirek/mvidia:0.0.7}
+    build: .
+    command: ["node", "packages/api-user/src/server.js"]
     ports:
       - "${API_USER_PORT:-3001}:${API_USER_PORT:-3001}"
     env_file: .env
@@ -21,11 +19,8 @@ services:
       - uploads:/data/uploads
 
   admin:
-    build:
-      context: .
-      target: api-admin
-      args:
-        USER_PUBLIC_SITE_URL: ${USER_PUBLIC_SITE_URL:-http://localhost:3001}
+    image: ${MVIDIA_IMAGE:-antirek/mvidia:0.0.7}
+    command: ["node", "packages/api-admin/src/server.js"]
     ports:
       - "${API_ADMIN_PORT:-3002}:${API_ADMIN_PORT:-3002}"
     env_file: .env

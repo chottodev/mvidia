@@ -2,17 +2,14 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const WEB_PACKAGE = 'web-admin';
+const UI_DIST = path.join(__dirname, '../../web-admin/dist');
 
 function resolveServeUi() {
   return process.env.SERVE_UI !== '0' && process.env.SERVE_UI !== 'false';
 }
 
-function resolveUiDist(rootDir) {
-  if (process.env.UI_DIST_PATH) {
-    return process.env.UI_DIST_PATH;
-  }
-  return path.join(rootDir, 'packages', WEB_PACKAGE, 'dist');
+function resolveUiDist() {
+  return process.env.UI_DIST_PATH || UI_DIST;
 }
 
 const API_PATH_PREFIXES = ['/videos', '/api-docs'];

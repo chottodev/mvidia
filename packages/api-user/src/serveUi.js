@@ -2,33 +2,23 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 
-const WEB_PACKAGE = 'web';
+/** Собранный UI этого сервиса (локально и в Docker — packages/web/dist) */
+const UI_DIST = path.join(__dirname, '../../web/dist');
 
-/** По умолчанию UI включён; отключить: SERVE_UI=0 */
 function resolveServeUi() {
   return process.env.SERVE_UI !== '0' && process.env.SERVE_UI !== 'false';
 }
 
-function resolveUiDist(rootDir) {
-  if (process.env.UI_DIST_PATH) {
-    return process.env.UI_DIST_PATH;
-  }
-  return path.join(rootDir, 'packages', WEB_PACKAGE, 'dist');
+function resolveUiDist() {
+  return process.env.UI_DIST_PATH || UI_DIST;
 }
 
-/** Пути API — не отдаём index.html для них */
 const API_PATH_PREFIXES = ['/videos', '/api-docs'];
 
 function isApiPath(urlPath) {
   return API_PATH_PREFIXES.some((p) => urlPath === p || urlPath.startsWith(`${p}/`));
 }
 
-/**
- * Раздача собранного Vue (SPA) с того же хоста, что и API.
- * @param {import('express').Express} app
- * @param {string} distDir абсолютный путь к dist
- * @returns {boolean}
- */
 function mountSpa(app, distDir) {
   const resolved = path.resolve(distDir);
   if (!fs.existsSync(resolved)) {

@@ -50,7 +50,7 @@
 | B | TypeScript | **Только фронты** (`web`, `web-admin`); **`api-user`** и **`api-admin`** — **JavaScript**. |
 | C | ODM | **Mongoose** в пакете **`db`**. |
 | D | Админ | Весь сервис **`api-admin`** защищён **HTTP Basic** (глобальный middleware); **`api-user`** без Basic, только публичные маршруты. |
-| E | Сборка | **Docker**: отдельные stage/образы под **`api-user`**, **`api-admin`** и статику Vue — по мере реализации. |
+| E | Сборка | **Docker**: один образ **`antirek/mvidia`**; в compose два контейнера с разным `command` (`api-user` / `api-admin`). |
 | F | Имя файла на диске | **Внутренний id** (например UUID или `ObjectId`), не `{publicId}.mp4`; связь `publicId` ↔ путь к файлу только в Mongo. |
 | G | Локальная разработка | **Три** процесса на разных портах: **`api-user`**, **`api-admin`**, Vite-фронты. У **`web`**: `VITE_API_USER_BASE_URL` (или `VITE_API_BASE_URL` — единое имя для user API); у **`web-admin`**: `VITE_API_ADMIN_BASE_URL`. |
 | H | CORS | **`api-user`**: `Access-Control-Allow-Origin: *`. **`api-admin`**: не дублировать `*` без нужды; в **dev** разрешить origin **`web-admin`** (URL Vite), иначе браузер заблокирует запросы с Basic; при желании на время разработки можно ослабить до `*` локально. |
@@ -177,16 +177,9 @@
 
 ### Docker
 
-- **`Dockerfile`**: в образах **`api-user`** и **`api-admin`** уже встроены собранные UI.
-- **`docker-compose.yml`**: MongoDB + сервисы **`user`** (3001) и **`admin`** (3002), общий volume загрузок.
-- **`docker-build.sh`**: локальная сборка и push на Docker Hub:
-  ```bash
-  chmod +x docker-build.sh
-  # в .env: DOCKERHUB_USER=ваш_логин
-  docker login
-  ./docker-build.sh --push
-  ```
-  Образы: `<user>/mvidia-api-user:<tag>`, `<user>/mvidia-api-admin:<tag>` (префикс и тег — `DOCKER_IMAGE_PREFIX`, `DOCKER_TAG` в `.env`).
+- **`Dockerfile`**: один образ; UI в **`packages/web/dist`** и **`packages/web-admin/dist`** (каждый API отдаёт свой каталог).
+- **`docker-compose.yml`**: сервисы **`user`** и **`admin`**, один образ `MVIDIA_IMAGE`, разный `command`.
+- **`docker-build.sh`**: `./docker-build.sh` → образ **`antirek/mvidia:TAG`** (переменные `IMAGE`, `TAG`).
 
 ---
 

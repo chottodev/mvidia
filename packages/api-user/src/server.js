@@ -50,7 +50,7 @@ async function main() {
   });
 
   const serveUi = resolveServeUi();
-  const uiDist = resolveUiDist(rootDir);
+  const uiDist = resolveUiDist();
   if (serveUi && mountSpa(app, uiDist)) {
     // eslint-disable-next-line no-console
     console.log(`[api-user] UI: ${uiDist}`);

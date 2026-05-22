@@ -12,12 +12,19 @@ const loading = ref(true);
 const err = ref('');
 const title = ref('');
 const src = ref('');
+const playErr = ref('');
+
+function onVideoError() {
+  playErr.value =
+    'Не удалось воспроизвести. Частая причина — MP4 с HEVC (H.265): нужен H.264 (AVC). Перекодируйте файл и загрузите снова.';
+}
 
 async function load() {
   loading.value = true;
   err.value = '';
   title.value = '';
   src.value = '';
+  playErr.value = '';
   try {
     const meta = await getVideoMeta(publicId.value);
     title.value = meta.title;
@@ -43,7 +50,10 @@ watch(publicId, () => {
     <p v-else-if="err" class="err">{{ err }}</p>
     <template v-else>
       <h1>{{ title }}</h1>
-      <video v-if="src" class="player" controls playsinline :src="src" />
+      <video v-if="src" class="player" controls playsinline @error="onVideoError">
+        <source :src="src" type="video/mp4" />
+      </video>
+      <p v-if="playErr" class="err">{{ playErr }}</p>
     </template>
   </div>
 </template>

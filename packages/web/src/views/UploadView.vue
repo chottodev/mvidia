@@ -53,7 +53,7 @@ async function copyLink() {
 
 <template>
   <h1>Загрузка видео</h1>
-  <p class="hint">Только MP4, до 1 ГБ.</p>
+  <p class="hint">Только MP4 с кодеком H.264 (AVC), до 1 ГБ. HEVC (H.265) в браузере не проигрывается.</p>
 
   <form class="form" @submit.prevent="submit">
     <label class="field">

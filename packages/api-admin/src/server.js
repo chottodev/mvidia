@@ -5,7 +5,7 @@ const cors = require('cors');
 const openapi = require('express-openapi');
 const { connect, Video } = require('db');
 const handlersModule = require('./handlers');
-const { mountSpa, resolveServeUi, resolveUiDist } = require('../../api-user/src/serveUi');
+const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
 function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) return;
@@ -85,10 +85,10 @@ async function main() {
     errorMiddleware,
   });
 
-  const uiDist = resolveUiDist(rootDir, 'web-admin');
+  const uiDist = resolveUiDist(rootDir);
   if (serveUi && mountSpa(app, uiDist)) {
     // eslint-disable-next-line no-console
-    console.log(`admin UI: ${uiDist}`);
+    console.log(`[api-admin] UI: ${uiDist}`);
   } else if (serveUi) {
     // eslint-disable-next-line no-console
     console.warn(`admin UI не найден (${uiDist}), только API. Соберите: npm run build -w web-admin`);

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Build Docker image. Set TAG (and optionally IMAGE) for the image reference.
+# Сборка двух образов (user и admin — разный UI в /app/ui).
 
-TAG=0.0.7
-IMAGE=antirek/mvidia
+TAG="${TAG:-0.0.7}"
+IMAGE="${IMAGE:-antirek/mvidia}"
 
-docker build \
-  -t "${IMAGE}:${TAG}" \
-  .
+docker build --target api-user -t "${IMAGE}-user:${TAG}" .
+docker build --target api-admin -t "${IMAGE}-admin:${TAG}" .
 
-docker push "${IMAGE}:${TAG}"
+docker push "${IMAGE}-user:${TAG}"
+docker push "${IMAGE}-admin:${TAG}"
 
-echo "Built ${IMAGE}:${TAG}"
+echo "Built ${IMAGE}-user:${TAG}"
+echo "Built ${IMAGE}-admin:${TAG}"

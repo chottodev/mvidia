@@ -50,10 +50,10 @@ async function main() {
   });
 
   const serveUi = resolveServeUi();
-  const uiDist = resolveUiDist(rootDir, 'web');
+  const uiDist = resolveUiDist(rootDir);
   if (serveUi && mountSpa(app, uiDist)) {
     // eslint-disable-next-line no-console
-    console.log(`user UI: ${uiDist}`);
+    console.log(`[api-user] UI: ${uiDist}`);
   } else if (serveUi) {
     // eslint-disable-next-line no-console
     console.warn(`user UI не найден (${uiDist}), только API. Соберите: npm run build -w web`);

@@ -15,6 +15,7 @@ RUN npm ci \
 # Клиентский стек: API + UI
 FROM node:22-bookworm-slim AS api-user
 WORKDIR /app
+ENV UI_DIST_PATH=/app/ui
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY --from=build /app/packages/web/dist /app/ui
@@ -23,6 +24,7 @@ RUN npm ci --omit=dev
 # Админский стек: API + UI
 FROM node:22-bookworm-slim AS api-admin
 WORKDIR /app
+ENV UI_DIST_PATH=/app/ui
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY --from=build /app/packages/web-admin/dist /app/ui

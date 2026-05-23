@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
+import { bindVideoPreview } from '../lib/bindVideoPreview';
 import { useRouter } from 'vue-router';
+import ScreencastSetupPanel from '../components/ScreencastSetupPanel.vue';
 import { publicSiteBase, uploadVideo } from '../api/userApi';
 import { useScreencastRecorder } from '../composables/useScreencastRecorder';
 import { makeScreencastTitle } from '../lib/screencastTitle';
 import { isRecordingSecureContext } from '../lib/secureContext';
 
 const router = useRouter();
+const setupPanel = ref<InstanceType<typeof ScreencastSetupPanel> | null>(null);
+const recordingPreviewEl = ref<HTMLVideoElement | null>(null);
+
 const {
   phase,
   error: recorderError,
   formattedTime,
   uiAvailable,
-  mp4Available,
+  mp4VideoAvailable,
   start,
   stop,
 } = useScreencastRecorder();
@@ -23,13 +28,47 @@ const lastLink = ref('');
 const lastPublicId = ref('');
 
 const secureContext = isRecordingSecureContext();
-const canStart = computed(() => uiAvailable && mp4Available && secureContext);
+const setupLocked = computed(() => phase.value !== 'idle' || uploading.value);
+
+const canStart = computed(() => {
+  if (!uiAvailable || !mp4VideoAvailable || !secureContext) return false;
+  return setupPanel.value?.isSetupReady ?? false;
+});
+
+const showRecordingWebcamPreview = computed(
+  () =>
+    phase.value === 'recording' &&
+    setupPanel.value?.webcamEnabled &&
+    setupPanel.value?.webcamReady &&
+    setupPanel.value?.webcamStream
+);
+
+async function syncRecordingWebcamPreview() {
+  await nextTick();
+  if (!showRecordingWebcamPreview.value) {
+    if (recordingPreviewEl.value) recordingPreviewEl.value.srcObject = null;
+    return;
+  }
+  await bindVideoPreview(recordingPreviewEl.value, setupPanel.value?.webcamStream ?? null);
+}
+
+watch([showRecordingWebcamPreview, recordingPreviewEl], () => {
+  void syncRecordingWebcamPreview();
+}, { flush: 'post' });
 
 async function onStart() {
   pageError.value = '';
   lastLink.value = '';
   lastPublicId.value = '';
-  await start();
+  const panel = setupPanel.value;
+  if (!panel) return;
+
+  await start({
+    useWebcam: panel.webcamEnabled,
+    useMic: panel.micEnabled,
+    webcamStream: panel.webcamStream,
+    micStream: panel.micStream,
+  });
 }
 
 async function onStop() {
@@ -88,33 +127,47 @@ function resetResult() {
 
   <template v-else>
     <p class="hint">
-      Будет записано только изображение экрана (без звука). После остановки файл отправится на сервер как MP4
-      (H.264), до 1 ГБ. Нужен Chrome или Edge; сайт — по HTTPS, localhost или 127.0.0.1.
+      Запись экрана — основа. Опционально: вебкамера (PiP в углу) и микрофон. Файл — MP4 (H.264), до 1 ГБ.
+      Chrome или Edge; HTTPS, localhost или 127.0.0.1.
     </p>
-    <p v-if="!mp4Available" class="warn">
-      В этом браузере нет записи в MP4 (H.264) — частая ситуация на <strong>Linux</strong>. Для обкатки попробуйте
-      Chrome на Windows/macOS или
+    <p v-if="!mp4VideoAvailable" class="warn">
+      В этом браузере нет записи в MP4 (H.264) — частая ситуация на <strong>Linux</strong>. Попробуйте Chrome на
+      Windows/macOS или
       <RouterLink to="/">загрузите готовый MP4</RouterLink>.
     </p>
     <p v-if="!secureContext" class="warn">
       Откройте сайт по <strong>https://</strong>, <strong>http://localhost</strong> или
-      <strong>http://127.0.0.1</strong> — иначе браузер не даст доступ к экрану.
+      <strong>http://127.0.0.1</strong>.
     </p>
+
+    <ScreencastSetupPanel ref="setupPanel" :locked="setupLocked" />
 
     <div v-if="phase === 'idle' && !uploading && !lastLink" class="panel">
       <button type="button" class="primary" :disabled="!canStart" @click="onStart">
         Начать запись
       </button>
       <p v-if="!canStart" class="panel-hint">
-        Кнопка станет активной, когда браузер поддерживает MP4 и адрес подходит для захвата экрана.
+        Разрешите доступ к включённым устройствам или отключите опцию. Нужна поддержка MP4 в браузере.
       </p>
     </div>
 
     <div v-else-if="phase === 'recording'" class="panel recording">
-      <p class="status">
-        Идёт запись <span class="timer">{{ formattedTime }}</span>
-      </p>
-      <button type="button" class="danger" @click="onStop">Стоп запись</button>
+      <div class="recording-row">
+        <div>
+          <p class="status">
+            Идёт запись <span class="timer">{{ formattedTime }}</span>
+          </p>
+          <button type="button" class="danger" @click="onStop">Стоп запись</button>
+        </div>
+        <video
+          v-if="showRecordingWebcamPreview"
+          ref="recordingPreviewEl"
+          class="recording-preview mirror"
+          muted
+          playsinline
+          autoplay
+        />
+      </div>
     </div>
 
     <div v-else-if="phase === 'stopping' || uploading" class="panel">
@@ -162,10 +215,26 @@ function resetResult() {
   font-size: 0.9rem;
   color: #64748b;
 }
+.recording-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
 .recording .status {
   font-size: 1.1rem;
   font-weight: 600;
   margin: 0 0 1rem;
+}
+.recording-preview {
+  width: 160px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #0f172a;
+}
+.recording-preview.mirror {
+  transform: scaleX(-1);
 }
 .timer {
   font-variant-numeric: tabular-nums;

@@ -1,12 +1,24 @@
 import { computed, onUnmounted, ref } from 'vue';
 import {
-  canRecordMp4,
+  cloneWebcamForComposite,
+  createCompositeStream,
+  type CompositeStreamHandle,
+} from '../lib/compositeStream';
+import {
+  canRecordMp4Video,
   isRecordingSupported,
   isRecordingUiAvailable,
   pickRecorderMimeType,
 } from '../lib/recorderMime';
 
 export type RecorderPhase = 'idle' | 'recording' | 'stopping';
+
+export type ScreencastRecordOptions = {
+  useWebcam: boolean;
+  useMic: boolean;
+  webcamStream: MediaStream | null;
+  micStream: MediaStream | null;
+};
 
 const ONE_GB = 1024 * 1024 * 1024;
 
@@ -17,10 +29,11 @@ export function useScreencastRecorder() {
 
   const uiAvailable = isRecordingUiAvailable();
   const supported = isRecordingSupported();
-  const mp4Available = canRecordMp4();
-  const mimeType = pickRecorderMimeType();
+  const mp4VideoAvailable = canRecordMp4Video();
 
-  let stream: MediaStream | null = null;
+  let screenStream: MediaStream | null = null;
+  let clonedWebcamStream: MediaStream | null = null;
+  let composite: CompositeStreamHandle | null = null;
   let recorder: MediaRecorder | null = null;
   let chunks: BlobPart[] = [];
   let timerId: ReturnType<typeof setInterval> | null = null;
@@ -42,18 +55,35 @@ export function useScreencastRecorder() {
     }
   }
 
-  function releaseStream() {
-    stream?.getTracks().forEach((t) => {
+  function releaseRecording() {
+    composite?.stop();
+    composite = null;
+    clonedWebcamStream?.getTracks().forEach((t) => t.stop());
+    clonedWebcamStream = null;
+    screenStream?.getTracks().forEach((t) => {
       t.onended = null;
       t.stop();
     });
-    stream = null;
+    screenStream = null;
     recorder = null;
     clearTimer();
   }
 
+  function attachTrackEndedHandlers(recordStream: MediaStream) {
+    recordStream.getTracks().forEach((track) => {
+      track.onended = () => {
+        if (phase.value !== 'recording') return;
+        error.value =
+          track.kind === 'video'
+            ? 'Видеопоток оборвался (захват экрана или композит)'
+            : 'Аудиопоток оборвался';
+        requestStop({ interrupted: true });
+      };
+    });
+  }
+
   function failStop(err: Error) {
-    releaseStream();
+    releaseRecording();
     phase.value = 'idle';
     elapsedSec.value = 0;
     stopReject?.(err);
@@ -61,29 +91,56 @@ export function useScreencastRecorder() {
     stopReject = null;
   }
 
-  async function start(): Promise<void> {
+  async function start(options: ScreencastRecordOptions): Promise<void> {
     error.value = '';
     if (!uiAvailable) {
       error.value = 'Запись недоступна в этом браузере';
       return;
     }
-    if (!mp4Available || !mimeType) {
+    if (phase.value !== 'idle') return;
+
+    const withAudio = options.useMic && !!options.micStream?.getAudioTracks().length;
+    const mimeType = pickRecorderMimeType({ withAudio });
+    if (!mimeType) {
       error.value =
         'Этот браузер не умеет записывать MP4 (H.264). На Linux так бывает — попробуйте Chrome на Windows/macOS или загрузите файл вручную.';
       return;
     }
-    if (phase.value !== 'idle') return;
+
+    if (options.useWebcam && !options.webcamStream) {
+      error.value = 'Включите камеру и разрешите доступ перед записью';
+      return;
+    }
+    if (options.useMic && !options.micStream) {
+      error.value = 'Включите микрофон и разрешите доступ перед записью';
+      return;
+    }
 
     try {
-      const media = await navigator.mediaDevices.getDisplayMedia({
+      const display = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false,
       });
-      stream = media;
+      screenStream = display;
+
+      clonedWebcamStream =
+        options.useWebcam && options.webcamStream
+          ? cloneWebcamForComposite(options.webcamStream)
+          : null;
+
+      composite = createCompositeStream({
+        screenStream: display,
+        webcamStream: clonedWebcamStream,
+        micStream: options.useMic ? options.micStream : null,
+      });
+      await composite.ready;
+
+      const recordStream = composite.stream;
+      attachTrackEndedHandlers(recordStream);
       chunks = [];
       stopInterrupted = false;
 
-      const rec = new MediaRecorder(media, { mimeType });
+      const rec = new MediaRecorder(recordStream, { mimeType });
       recorder = rec;
 
       rec.ondataavailable = (e) => {
@@ -99,7 +156,7 @@ export function useScreencastRecorder() {
         const blob = new Blob(chunks, { type: 'video/mp4' });
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const file = new File([blob], `screencast-${ts}.mp4`, { type: 'video/mp4' });
-        releaseStream();
+        releaseRecording();
         phase.value = 'idle';
         elapsedSec.value = 0;
 
@@ -121,7 +178,7 @@ export function useScreencastRecorder() {
         stopReject = null;
       };
 
-      const videoTrack = media.getVideoTracks()[0];
+      const videoTrack = display.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.onended = () => {
           if (phase.value === 'recording') {
@@ -137,7 +194,7 @@ export function useScreencastRecorder() {
         elapsedSec.value += 1;
       }, 1000);
     } catch (e) {
-      releaseStream();
+      releaseRecording();
       phase.value = 'idle';
       if (e instanceof DOMException && e.name === 'NotAllowedError') {
         error.value = 'Доступ к экрану не предоставлен';
@@ -154,7 +211,10 @@ export function useScreencastRecorder() {
     stopInterrupted = !!opts?.interrupted;
     phase.value = 'stopping';
     try {
-      if (recorder.state !== 'inactive') {
+      if (recorder.state === 'recording') {
+        recorder.requestData();
+        recorder.stop();
+      } else if (recorder.state === 'paused') {
         recorder.stop();
       }
     } catch (e) {
@@ -182,7 +242,7 @@ export function useScreencastRecorder() {
         /* ignore */
       }
     }
-    releaseStream();
+    releaseRecording();
     phase.value = 'idle';
   });
 
@@ -193,8 +253,7 @@ export function useScreencastRecorder() {
     formattedTime,
     uiAvailable,
     supported,
-    mp4Available,
-    mimeType,
+    mp4VideoAvailable,
     start,
     stop,
   };

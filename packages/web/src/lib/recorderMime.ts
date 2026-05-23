@@ -1,12 +1,19 @@
-const MIME_CANDIDATES = [
+const MIME_WITH_AUDIO = [
   'video/mp4;codecs="avc1.42E01E, mp4a.40.2"',
+  'video/mp4;codecs="avc1, mp4a.40.2"',
+  'video/mp4',
+] as const;
+
+const MIME_VIDEO_ONLY = [
+  'video/mp4;codecs="avc1.42E01E"',
   'video/mp4;codecs=avc1',
   'video/mp4',
 ] as const;
 
-export function pickRecorderMimeType(): string | null {
+export function pickRecorderMimeType(options?: { withAudio?: boolean }): string | null {
   if (typeof MediaRecorder === 'undefined') return null;
-  for (const mime of MIME_CANDIDATES) {
+  const list = options?.withAudio ? MIME_WITH_AUDIO : MIME_VIDEO_ONLY;
+  for (const mime of list) {
     if (MediaRecorder.isTypeSupported(mime)) return mime;
   }
   return null;
@@ -31,17 +38,25 @@ export function hasDisplayCapture(): boolean {
   return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 }
 
-export function canRecordMp4(): boolean {
-  const mime = pickRecorderMimeType();
+export function canRecordMp4Video(): boolean {
+  const mime = pickRecorderMimeType({ withAudio: false });
   return mime != null && mime.includes('mp4');
 }
 
-/** Можно открыть UI записи (Chromium + захват экрана). */
+export function canRecordMp4WithAudio(): boolean {
+  const mime = pickRecorderMimeType({ withAudio: true });
+  return mime != null && mime.includes('mp4');
+}
+
+/** @deprecated use canRecordMp4Video */
+export function canRecordMp4(): boolean {
+  return canRecordMp4Video();
+}
+
 export function isRecordingUiAvailable(): boolean {
   return isChromiumDesktop() && hasDisplayCapture() && typeof MediaRecorder !== 'undefined';
 }
 
-/** Можно реально начать запись под наш API (нужен MP4/H.264). */
 export function isRecordingSupported(): boolean {
-  return isRecordingUiAvailable() && canRecordMp4();
+  return isRecordingUiAvailable() && canRecordMp4Video();
 }

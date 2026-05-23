@@ -8,6 +8,7 @@ import { RouterLink, RouterView } from 'vue-router';
       <strong>mvidia</strong>
       <nav>
         <RouterLink to="/">Загрузка</RouterLink>
+        <RouterLink to="/screencast">Скринкаст</RouterLink>
       </nav>
     </header>
     <main class="main">

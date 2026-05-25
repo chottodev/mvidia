@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import { listMicrophones, pickExistingDeviceId } from '../lib/mediaDevices';
-import { canRecordMp4WithAudio } from '../lib/recorderMime';
+import { canRecordWebmAudio } from '../lib/recorderMime';
 import { loadScreencastPrefs, saveScreencastPrefs } from '../lib/screencastPrefs';
 
 export function useMicLevel(locked?: Ref<boolean>) {
@@ -137,7 +137,7 @@ export function useMicLevel(locked?: Ref<boolean>) {
   }
 
   onMounted(() => {
-    if (enabled.value && !canRecordMp4WithAudio()) {
+    if (enabled.value && !canRecordWebmAudio()) {
       enabled.value = false;
       saveScreencastPrefs({ useMic: false });
     }

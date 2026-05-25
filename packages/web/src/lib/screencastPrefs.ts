@@ -3,6 +3,7 @@ const PREFIX = 'mvidia.screencast.';
 export type ScreencastPrefs = {
   useWebcam: boolean;
   useMic: boolean;
+  useSystemAudio: boolean;
   cameraId: string;
   micId: string;
 };
@@ -10,6 +11,7 @@ export type ScreencastPrefs = {
 const DEFAULTS: ScreencastPrefs = {
   useWebcam: false,
   useMic: false,
+  useSystemAudio: false,
   cameraId: '',
   micId: '',
 };
@@ -37,6 +39,7 @@ export function loadScreencastPrefs(): ScreencastPrefs {
   return {
     useWebcam: readBool('useWebcam', DEFAULTS.useWebcam),
     useMic: readBool('useMic', DEFAULTS.useMic),
+    useSystemAudio: readBool('useSystemAudio', DEFAULTS.useSystemAudio),
     cameraId: readStr('cameraId', DEFAULTS.cameraId),
     micId: readStr('micId', DEFAULTS.micId),
   };
@@ -49,6 +52,9 @@ export function saveScreencastPrefs(partial: Partial<ScreencastPrefs>): void {
     }
     if (partial.useMic !== undefined) {
       localStorage.setItem(PREFIX + 'useMic', partial.useMic ? '1' : '0');
+    }
+    if (partial.useSystemAudio !== undefined) {
+      localStorage.setItem(PREFIX + 'useSystemAudio', partial.useSystemAudio ? '1' : '0');
     }
     if (partial.cameraId !== undefined) {
       localStorage.setItem(PREFIX + 'cameraId', partial.cameraId);

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, toRef } from 'vue';
 import { bindVideoPreview } from '../lib/bindVideoPreview';
-import { canRecordMp4WithAudio } from '../lib/recorderMime';
+import { canRecordWebmAudio } from '../lib/recorderMime';
+import { loadScreencastPrefs, saveScreencastPrefs } from '../lib/screencastPrefs';
 import { useMicLevel } from '../composables/useMicLevel';
 import { useWebcamPreview } from '../composables/useWebcamPreview';
 
@@ -32,8 +33,14 @@ const {
   devices: micDevices,
 } = mic;
 
-const micAudioSupported = canRecordMp4WithAudio();
+const micAudioSupported = canRecordWebmAudio();
+const prefs = loadScreencastPrefs();
+const systemAudioEnabled = ref(prefs.useSystemAudio);
 const previewVideoEl = ref<HTMLVideoElement | null>(null);
+
+watch(systemAudioEnabled, (v) => {
+  saveScreencastPrefs({ useSystemAudio: v });
+});
 
 const showWebcamPreview = computed(() => webcamEnabled.value && webcamReady.value && webcamStream.value);
 
@@ -65,6 +72,7 @@ defineExpose({
   micEnabled,
   micReady,
   micStream,
+  systemAudioEnabled,
   isSetupReady,
 });
 </script>
@@ -105,7 +113,7 @@ defineExpose({
         <span>Запись микрофона</span>
       </label>
       <p v-if="!micAudioSupported" class="opt-warn">
-        В этом браузере нельзя записать MP4 со звуком — опция недоступна.
+        В этом браузере нельзя записать звук в WebM — опция недоступна.
       </p>
       <template v-else-if="micEnabled">
         <label class="select-row">
@@ -125,6 +133,17 @@ defineExpose({
         </div>
         <p v-if="micError" class="opt-err">{{ micError }}</p>
       </template>
+    </div>
+
+    <div class="option">
+      <label class="check" :class="{ disabled: !micAudioSupported }">
+        <input v-model="systemAudioEnabled" type="checkbox" :disabled="locked || !micAudioSupported" />
+        <span>Звук компьютера / вкладки</span>
+      </label>
+      <p class="opt-hint">
+        При записи в диалоге Chrome отметьте «Поделиться звуком вкладки» (или системным звуком). Если не
+        отметите — запись продолжится без этой дорожки.
+      </p>
     </div>
   </section>
 </template>
@@ -221,5 +240,11 @@ defineExpose({
   margin: 0.35rem 0 0;
   color: #b45309;
   font-size: 0.85rem;
+}
+.opt-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 </style>

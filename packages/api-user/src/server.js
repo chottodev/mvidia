@@ -3,8 +3,9 @@ const fs = require('fs/promises');
 const express = require('express');
 const cors = require('cors');
 const openapi = require('express-openapi');
-const { connect, Video } = require('db');
+const { connect, Video, RecordingSession } = require('db');
 const handlersModule = require('./handlers');
+const { createRecordingRouter } = require('./recordingRoutes');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
 function errorMiddleware(err, req, res, _next) {
@@ -30,10 +31,15 @@ async function main() {
     (process.env.UPLOAD_DIR || 'uploads').replace(/^\.\//, '')
   );
   await fs.mkdir(uploadDirAbs, { recursive: true });
+  await fs.mkdir(path.join(uploadDirAbs, 'staging'), { recursive: true });
+  await fs.mkdir(path.join(uploadDirAbs, 'archive'), { recursive: true });
 
   const app = express();
   app.disable('x-powered-by');
   app.use(cors({ origin: '*' }));
+
+  const recordingDeps = { Video, RecordingSession, uploadDirAbs };
+  app.use('/recordings', createRecordingRouter(recordingDeps));
 
   const multipartMw = handlersModule.createMultipartMiddleware(uploadDirAbs);
 

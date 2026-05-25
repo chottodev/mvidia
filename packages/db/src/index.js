@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Video = require('./Video');
+const RecordingSession = require('./RecordingSession');
 
 /**
  * @param {string} uri
@@ -9,4 +10,4 @@ async function connect(uri) {
   await mongoose.connect(uri);
 }
 
-module.exports = { connect, Video };
+module.exports = { connect, Video, RecordingSession };

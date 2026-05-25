@@ -3,8 +3,8 @@ import { computed, ref, watch, nextTick } from 'vue';
 import { bindVideoPreview } from '../lib/bindVideoPreview';
 import { useRouter } from 'vue-router';
 import ScreencastSetupPanel from '../components/ScreencastSetupPanel.vue';
-import { publicSiteBase, uploadVideo } from '../api/userApi';
-import { useScreencastRecorder } from '../composables/useScreencastRecorder';
+import { publicSiteBase } from '../api/userApi';
+import { useScreencastStreamRecorder } from '../composables/useScreencastStreamRecorder';
 import { makeScreencastTitle } from '../lib/screencastTitle';
 import { isRecordingSecureContext } from '../lib/secureContext';
 
@@ -15,24 +15,23 @@ const recordingPreviewEl = ref<HTMLVideoElement | null>(null);
 const {
   phase,
   error: recorderError,
+  warning: recorderWarning,
   formattedTime,
   uiAvailable,
-  mp4VideoAvailable,
+  webmVideoAvailable,
   start,
   stop,
-} = useScreencastRecorder();
+} = useScreencastStreamRecorder();
 
-const uploading = ref(false);
-const preparingUpload = ref(false);
 const pageError = ref('');
 const lastLink = ref('');
 const lastPublicId = ref('');
 
 const secureContext = isRecordingSecureContext();
-const setupLocked = computed(() => phase.value !== 'idle' || uploading.value);
+const setupLocked = computed(() => phase.value !== 'idle');
 
 const canStart = computed(() => {
-  if (!uiAvailable || !mp4VideoAvailable || !secureContext) return false;
+  if (!uiAvailable || !webmVideoAvailable || !secureContext) return false;
   return setupPanel.value?.isSetupReady ?? false;
 });
 
@@ -65,8 +64,10 @@ async function onStart() {
   if (!panel) return;
 
   await start({
+    title: makeScreencastTitle(),
     useWebcam: panel.webcamEnabled,
     useMic: panel.micEnabled,
+    useSystemAudio: panel.systemAudioEnabled,
     webcamStream: panel.webcamStream,
     micStream: panel.micStream,
   });
@@ -75,27 +76,9 @@ async function onStart() {
 async function onStop() {
   pageError.value = '';
   try {
-    const rawFile = await stop();
-    uploading.value = true;
-    preparingUpload.value = true;
-    try {
-      let file = rawFile;
-      try {
-        const { ensureMp4FastStart } = await import('../lib/mp4FastStart');
-        file = await ensureMp4FastStart(rawFile);
-      } catch {
-        /* если mp4box не справился — грузим как есть; плеер попробует blob-fallback */
-      }
-      const title = makeScreencastTitle();
-      const r = await uploadVideo(file, title);
-      lastPublicId.value = r.publicId;
-      lastLink.value = `${publicSiteBase()}/v/${r.publicId}`;
-    } catch (e) {
-      pageError.value = e instanceof Error ? e.message : 'Ошибка загрузки';
-    } finally {
-      preparingUpload.value = false;
-      uploading.value = false;
-    }
+    const publicId = await stop();
+    lastPublicId.value = publicId;
+    lastLink.value = `${publicSiteBase()}/v/${publicId}`;
   } catch (e) {
     pageError.value = e instanceof Error ? e.message : 'Не удалось завершить запись';
   }
@@ -137,13 +120,11 @@ function resetResult() {
 
   <template v-else>
     <p class="hint">
-      Запись экрана — основа. Опционально: вебкамера (PiP в углу) и микрофон. Файл — MP4 (H.264), до 1 ГБ.
-      Chrome или Edge; HTTPS, localhost или 127.0.0.1.
+      Запись экрана с потоковой отправкой на сервер. Опционально: вебкамера (PiP), микрофон, звук вкладки/системы.
+      После остановки сервер собирает MP4 (H.264). Chrome или Edge; HTTPS, localhost или 127.0.0.1.
     </p>
-    <p v-if="!mp4VideoAvailable" class="warn">
-      В этом браузере нет записи в MP4 (H.264) — частая ситуация на <strong>Linux</strong>. Попробуйте Chrome на
-      Windows/macOS или
-      <RouterLink to="/">загрузите готовый MP4</RouterLink>.
+    <p v-if="!webmVideoAvailable" class="warn">
+      В этом браузере нет записи WebM — обновите Chrome/Edge.
     </p>
     <p v-if="!secureContext" class="warn">
       Откройте сайт по <strong>https://</strong>, <strong>http://localhost</strong> или
@@ -152,12 +133,12 @@ function resetResult() {
 
     <ScreencastSetupPanel ref="setupPanel" :locked="setupLocked" />
 
-    <div v-if="phase === 'idle' && !uploading && !lastLink" class="panel">
+    <div v-if="phase === 'idle' && !lastLink" class="panel">
       <button type="button" class="primary" :disabled="!canStart" @click="onStart">
         Начать запись
       </button>
       <p v-if="!canStart" class="panel-hint">
-        Разрешите доступ к включённым устройствам или отключите опцию. Нужна поддержка MP4 в браузере.
+        Разрешите доступ к включённым устройствам или отключите опцию.
       </p>
     </div>
 
@@ -167,6 +148,7 @@ function resetResult() {
           <p class="status">
             Идёт запись <span class="timer">{{ formattedTime }}</span>
           </p>
+          <p class="stream-hint">Данные отправляются на сервер по мере записи.</p>
           <button type="button" class="danger" @click="onStop">Стоп запись</button>
         </div>
         <video
@@ -180,18 +162,17 @@ function resetResult() {
       </div>
     </div>
 
-    <div v-else-if="phase === 'stopping' || uploading" class="panel">
+    <div v-else-if="phase === 'stopping' || phase === 'processing'" class="panel">
       <p class="status">
         {{
-          preparingUpload
-            ? 'Подготовка MP4 для просмотра в браузере…'
-            : uploading
-              ? 'Загрузка на сервер…'
-              : 'Завершение записи…'
+          phase === 'stopping'
+            ? 'Завершение записи и загрузка последних фрагментов…'
+            : 'Обработка на сервере (сборка MP4)…'
         }}
       </p>
     </div>
 
+    <p v-if="recorderWarning" class="warn">{{ recorderWarning }}</p>
     <p v-if="recorderError" class="err">{{ recorderError }}</p>
     <p v-if="pageError" class="err">{{ pageError }}</p>
 
@@ -233,6 +214,11 @@ function resetResult() {
   font-size: 0.9rem;
   color: #64748b;
 }
+.stream-hint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #64748b;
+}
 .recording-row {
   display: flex;
   flex-wrap: wrap;
@@ -242,7 +228,7 @@ function resetResult() {
 .recording .status {
   font-size: 1.1rem;
   font-weight: 600;
-  margin: 0 0 1rem;
+  margin: 0 0 0.5rem;
 }
 .recording-preview {
   width: 160px;

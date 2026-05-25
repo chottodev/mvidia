@@ -1,8 +1,12 @@
 const PIP_WIDTH_RATIO = 0.22;
 const PIP_MARGIN = 16;
 const PIP_RADIUS = 8;
-const COMPOSITE_FPS = 30;
-const DRAW_INTERVAL_MS = Math.round(1000 / COMPOSITE_FPS);
+/** Стабильный FPS для MediaRecorder; отрисовку не гоним быстрее */
+const COMPOSITE_FPS = 24;
+const MIN_FRAME_MS = Math.round(1000 / COMPOSITE_FPS);
+/** Выше — частые фризы на canvas при PiP (4K экран) */
+const MAX_CANVAS_W = 1920;
+const MAX_CANVAS_H = 1080;
 
 export type CompositeStreamHandle = {
   stream: MediaStream;
@@ -10,7 +14,6 @@ export type CompositeStreamHandle = {
   stop: () => void;
 };
 
-/** Отдельный video track для композита — превью в UI не делит один track с canvas. */
 export function cloneWebcamForComposite(webcamStream: MediaStream): MediaStream | null {
   const track = webcamStream.getVideoTracks()[0];
   if (!track) return null;
@@ -27,13 +30,28 @@ function waitVideoReady(video: HTMLVideoElement): Promise<void> {
   });
 }
 
-async function ensurePlaying(video: HTMLVideoElement) {
-  if (!video.paused) return;
-  try {
-    await video.play();
-  } catch {
-    /* ignore */
+function keepVideoPlaying(video: HTMLVideoElement) {
+  if (video.paused) {
+    void video.play().catch(() => {});
   }
+}
+
+/** Вписать исходный кадр в лимит 1080p — меньше нагрузка, меньше фризов */
+function fitCanvasSize(sourceW: number, sourceH: number): { w: number; h: number } {
+  if (sourceW <= 0 || sourceH <= 0) {
+    return { w: MAX_CANVAS_W, h: MAX_CANVAS_H };
+  }
+  let w = sourceW;
+  let h = sourceH;
+  if (w > MAX_CANVAS_W) {
+    h = Math.round((h * MAX_CANVAS_W) / w);
+    w = MAX_CANVAS_W;
+  }
+  if (h > MAX_CANVAS_H) {
+    w = Math.round((w * MAX_CANVAS_H) / h);
+    h = MAX_CANVAS_H;
+  }
+  return { w, h };
 }
 
 function drawRoundedVideo(
@@ -62,10 +80,6 @@ function createPipelineHost(): HTMLDivElement {
   return host;
 }
 
-/**
- * Собирает итоговый поток: экран (+ PiP вебкамеры) и опционально микрофон.
- * Canvas и <video> держим в DOM — иначе Chrome может остановить кадры через ~секунды.
- */
 export function createCompositeStream(options: {
   screenStream: MediaStream;
   webcamStream?: MediaStream | null;
@@ -83,9 +97,7 @@ export function createCompositeStream(options: {
     return {
       stream: out,
       ready: Promise.resolve(),
-      stop: () => {
-        /* tracks owned by caller */
-      },
+      stop: () => {},
     };
   }
 
@@ -104,17 +116,25 @@ export function createCompositeStream(options: {
   webcamVideo.srcObject = webcamStream!;
 
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', {
+    alpha: false,
+    desynchronized: true,
+  } as CanvasRenderingContext2DSettings);
   if (!ctx) {
     host.remove();
     throw new Error('Canvas 2D недоступен');
   }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'medium';
 
   host.append(screenVideo, webcamVideo, canvas);
 
   let running = false;
-  let rafId = 0;
-  let drawIntervalId = 0;
+  let drawTimerId = 0;
+  let rvfcId = 0;
+  let lastDrawMs = 0;
+  let canvasW = 0;
+  let canvasH = 0;
 
   const outStream = canvas.captureStream(COMPOSITE_FPS);
   const micAudio = micStream?.getAudioTracks()[0];
@@ -122,47 +142,69 @@ export function createCompositeStream(options: {
     outStream.addTrack(micAudio);
   }
 
-  async function drawFrame() {
+  function resizeCanvasIfNeeded() {
+    const sw = screenVideo.videoWidth;
+    const sh = screenVideo.videoHeight;
+    if (sw <= 0 || sh <= 0) return;
+    const { w, h } = fitCanvasSize(sw, sh);
+    if (w !== canvasW || h !== canvasH) {
+      canvasW = w;
+      canvasH = h;
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+
+  function drawFrameSync() {
     if (!running) return;
-    await ensurePlaying(screenVideo);
-    await ensurePlaying(webcamVideo);
+    const now = performance.now();
+    if (now - lastDrawMs < MIN_FRAME_MS) return;
+    lastDrawMs = now;
+
+    keepVideoPlaying(screenVideo);
+    keepVideoPlaying(webcamVideo);
     if (screenVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
-    if (canvas.width !== screenVideo.videoWidth || canvas.height !== screenVideo.videoHeight) {
-      canvas.width = screenVideo.videoWidth;
-      canvas.height = screenVideo.videoHeight;
-    }
-    ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+    resizeCanvasIfNeeded();
+    if (canvasW <= 0 || canvasH <= 0) return;
+
+    ctx.drawImage(screenVideo, 0, 0, canvasW, canvasH);
 
     if (webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      const pipW = canvas.width * PIP_WIDTH_RATIO;
+      const pipW = canvasW * PIP_WIDTH_RATIO;
       const aspect =
         webcamVideo.videoWidth > 0 ? webcamVideo.videoHeight / webcamVideo.videoWidth : 9 / 16;
       const pipH = pipW * aspect;
-      const x = canvas.width - pipW - PIP_MARGIN;
-      const y = canvas.height - pipH - PIP_MARGIN;
+      const x = canvasW - pipW - PIP_MARGIN;
+      const y = canvasH - pipH - PIP_MARGIN;
       drawRoundedVideo(ctx, webcamVideo, x, y, pipW, pipH, PIP_RADIUS);
     }
   }
 
-  function loop() {
-    void drawFrame();
-    rafId = requestAnimationFrame(loop);
-  }
+  const scheduleNextFrame = () => {
+    if (!running) return;
+    if (typeof screenVideo.requestVideoFrameCallback === 'function') {
+      rvfcId = screenVideo.requestVideoFrameCallback(() => {
+        drawFrameSync();
+        scheduleNextFrame();
+      });
+    }
+  };
 
   const ready = (async () => {
     await screenVideo.play();
     await waitVideoReady(screenVideo);
     await webcamVideo.play();
     await waitVideoReady(webcamVideo);
-    canvas.width = screenVideo.videoWidth;
-    canvas.height = screenVideo.videoHeight;
-    await drawFrame();
+    resizeCanvasIfNeeded();
+    drawFrameSync();
     running = true;
-    loop();
-    drawIntervalId = window.setInterval(() => {
-      void drawFrame();
-    }, DRAW_INTERVAL_MS);
+
+    if (typeof screenVideo.requestVideoFrameCallback === 'function') {
+      scheduleNextFrame();
+    } else {
+      drawTimerId = window.setInterval(drawFrameSync, MIN_FRAME_MS);
+    }
   })();
 
   return {
@@ -170,8 +212,10 @@ export function createCompositeStream(options: {
     ready,
     stop: () => {
       running = false;
-      cancelAnimationFrame(rafId);
-      clearInterval(drawIntervalId);
+      clearInterval(drawTimerId);
+      if (typeof screenVideo.cancelVideoFrameCallback === 'function' && rvfcId) {
+        screenVideo.cancelVideoFrameCallback(rvfcId);
+      }
       outStream.getTracks().forEach((t) => t.stop());
       screenVideo.srcObject = null;
       webcamVideo.srcObject = null;

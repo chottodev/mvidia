@@ -23,6 +23,7 @@ const {
 } = useScreencastRecorder();
 
 const uploading = ref(false);
+const preparingUpload = ref(false);
 const pageError = ref('');
 const lastLink = ref('');
 const lastPublicId = ref('');
@@ -74,9 +75,17 @@ async function onStart() {
 async function onStop() {
   pageError.value = '';
   try {
-    const file = await stop();
+    const rawFile = await stop();
     uploading.value = true;
+    preparingUpload.value = true;
     try {
+      let file = rawFile;
+      try {
+        const { ensureMp4FastStart } = await import('../lib/mp4FastStart');
+        file = await ensureMp4FastStart(rawFile);
+      } catch {
+        /* если mp4box не справился — грузим как есть; плеер попробует blob-fallback */
+      }
       const title = makeScreencastTitle();
       const r = await uploadVideo(file, title);
       lastPublicId.value = r.publicId;
@@ -84,6 +93,7 @@ async function onStop() {
     } catch (e) {
       pageError.value = e instanceof Error ? e.message : 'Ошибка загрузки';
     } finally {
+      preparingUpload.value = false;
       uploading.value = false;
     }
   } catch (e) {
@@ -171,7 +181,15 @@ function resetResult() {
     </div>
 
     <div v-else-if="phase === 'stopping' || uploading" class="panel">
-      <p class="status">{{ uploading ? 'Загрузка на сервер…' : 'Завершение записи…' }}</p>
+      <p class="status">
+        {{
+          preparingUpload
+            ? 'Подготовка MP4 для просмотра в браузере…'
+            : uploading
+              ? 'Загрузка на сервер…'
+              : 'Завершение записи…'
+        }}
+      </p>
     </div>
 
     <p v-if="recorderError" class="err">{{ recorderError }}</p>

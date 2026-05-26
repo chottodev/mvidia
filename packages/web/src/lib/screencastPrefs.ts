@@ -4,6 +4,8 @@ export type ScreencastPrefs = {
   useWebcam: boolean;
   useMic: boolean;
   useSystemAudio: boolean;
+  /** Document PiP с вебкамерой во время записи (только Chrome/Edge). */
+  livePipDuringRecording: boolean;
   cameraId: string;
   micId: string;
 };
@@ -12,6 +14,7 @@ const DEFAULTS: ScreencastPrefs = {
   useWebcam: false,
   useMic: false,
   useSystemAudio: false,
+  livePipDuringRecording: false,
   cameraId: '',
   micId: '',
 };
@@ -40,6 +43,7 @@ export function loadScreencastPrefs(): ScreencastPrefs {
     useWebcam: readBool('useWebcam', DEFAULTS.useWebcam),
     useMic: readBool('useMic', DEFAULTS.useMic),
     useSystemAudio: readBool('useSystemAudio', DEFAULTS.useSystemAudio),
+    livePipDuringRecording: readBool('livePipDuringRecording', DEFAULTS.livePipDuringRecording),
     cameraId: readStr('cameraId', DEFAULTS.cameraId),
     micId: readStr('micId', DEFAULTS.micId),
   };
@@ -55,6 +59,12 @@ export function saveScreencastPrefs(partial: Partial<ScreencastPrefs>): void {
     }
     if (partial.useSystemAudio !== undefined) {
       localStorage.setItem(PREFIX + 'useSystemAudio', partial.useSystemAudio ? '1' : '0');
+    }
+    if (partial.livePipDuringRecording !== undefined) {
+      localStorage.setItem(
+        PREFIX + 'livePipDuringRecording',
+        partial.livePipDuringRecording ? '1' : '0'
+      );
     }
     if (partial.cameraId !== undefined) {
       localStorage.setItem(PREFIX + 'cameraId', partial.cameraId);

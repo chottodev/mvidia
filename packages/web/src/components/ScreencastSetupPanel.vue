@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick, toRef } from 'vue';
 import { bindVideoPreview } from '../lib/bindVideoPreview';
 import { canRecordWebmAudio } from '../lib/recorderMime';
+import { isDocumentPictureInPictureSupported } from '../lib/pictureInPicture';
 import { loadScreencastPrefs, saveScreencastPrefs } from '../lib/screencastPrefs';
 import { useMicLevel } from '../composables/useMicLevel';
 import { useWebcamPreview } from '../composables/useWebcamPreview';
@@ -36,6 +37,16 @@ const {
 const micAudioSupported = canRecordWebmAudio();
 const prefs = loadScreencastPrefs();
 const systemAudioEnabled = ref(prefs.useSystemAudio);
+const livePipDuringRecording = ref(prefs.livePipDuringRecording);
+const documentPipSupported = isDocumentPictureInPictureSupported();
+
+watch(livePipDuringRecording, (v) => {
+  saveScreencastPrefs({ livePipDuringRecording: v });
+});
+
+watch(webcamEnabled, (v) => {
+  if (!v) livePipDuringRecording.value = false;
+});
 const previewVideoEl = ref<HTMLVideoElement | null>(null);
 
 watch(systemAudioEnabled, (v) => {
@@ -69,6 +80,7 @@ defineExpose({
   webcamEnabled,
   webcamReady,
   webcamStream,
+  livePipDuringRecording,
   micEnabled,
   micReady,
   micStream,
@@ -104,6 +116,16 @@ defineExpose({
           <video ref="previewVideoEl" class="preview-video mirror" muted playsinline autoplay />
         </div>
         <p v-if="webcamError" class="opt-err">{{ webcamError }}</p>
+        <template v-if="documentPipSupported">
+          <label class="check sub">
+            <input v-model="livePipDuringRecording" type="checkbox" :disabled="locked" />
+            <span>Использовать PiP во время записи</span>
+          </label>
+          <p class="opt-hint">
+            Отдельное окно с камерой поверх других вкладок и приложений. На запись экрана не
+            попадает.
+          </p>
+        </template>
       </template>
     </div>
 
@@ -184,6 +206,16 @@ defineExpose({
 .check.disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+.check.sub {
+  margin-top: 0.65rem;
+  font-weight: 500;
+}
+.opt-hint {
+  margin: 0.35rem 0 0 1.5rem;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 .select-row {
   display: flex;

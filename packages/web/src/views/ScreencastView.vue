@@ -4,6 +4,7 @@ import { bindVideoPreview } from '../lib/bindVideoPreview';
 import { useRouter } from 'vue-router';
 import ScreencastSetupPanel from '../components/ScreencastSetupPanel.vue';
 import { publicSiteBase } from '../api/userApi';
+import { useLiveWebcamPip } from '../composables/useLiveWebcamPip';
 import { useScreencastStreamRecorder } from '../composables/useScreencastStreamRecorder';
 import { makeScreencastTitle } from '../lib/screencastTitle';
 import { isRecordingSecureContext } from '../lib/secureContext';
@@ -23,6 +24,8 @@ const {
   stop,
 } = useScreencastStreamRecorder();
 
+const liveWebcamPip = useLiveWebcamPip();
+
 const pageError = ref('');
 const lastLink = ref('');
 const lastPublicId = ref('');
@@ -40,7 +43,8 @@ const showRecordingWebcamPreview = computed(
     phase.value === 'recording' &&
     setupPanel.value?.webcamEnabled &&
     setupPanel.value?.webcamReady &&
-    setupPanel.value?.webcamStream
+    setupPanel.value?.webcamStream &&
+    !setupPanel.value?.livePipDuringRecording
 );
 
 async function syncRecordingWebcamPreview() {
@@ -71,10 +75,26 @@ async function onStart() {
     webcamStream: panel.webcamStream,
     micStream: panel.micStream,
   });
+
+  if (
+    panel.webcamEnabled &&
+    panel.livePipDuringRecording &&
+    panel.webcamStream
+  ) {
+    try {
+      await liveWebcamPip.open(panel.webcamStream);
+    } catch (e) {
+      recorderWarning.value =
+        e instanceof Error
+          ? `Не удалось открыть PiP: ${e.message}`
+          : 'Не удалось открыть окно камеры';
+    }
+  }
 }
 
 async function onStop() {
   pageError.value = '';
+  liveWebcamPip.close();
   try {
     const publicId = await stop();
     lastPublicId.value = publicId;

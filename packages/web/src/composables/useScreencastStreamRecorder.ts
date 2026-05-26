@@ -236,7 +236,7 @@ export function useScreencastStreamRecorder() {
       sessionStartedAt: Date.now(),
       sessionStartedAtPerf: startedPerf,
       tracks,
-      layout: { pip: { corner: 'bottom-right', widthRatio: 0.22, marginPx: 16 } },
+      layout: { pip: { corner: 'bottom-right', widthRatio: 0.44, marginPx: 16 } },
     };
   }
 

@@ -94,7 +94,7 @@ function readMeta(meta) {
   const layout = meta?.layout?.pip || {};
   return {
     tracks,
-    widthRatio: layout.widthRatio ?? 0.22,
+    widthRatio: layout.widthRatio ?? 0.44,
     marginPx: layout.marginPx ?? 16,
   };
 }

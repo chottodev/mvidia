@@ -1,6 +1,34 @@
 const path = require('path');
 const fs = require('fs/promises');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
+
+const MERGE_FPS = Math.min(60, Math.max(1, parseInt(process.env.MERGE_FPS || '30', 10) || 30));
+const MERGE_MAX_WIDTH = Math.max(
+  640,
+  parseInt(process.env.MERGE_MAX_WIDTH || '1920', 10) || 1920
+);
+const MERGE_CRF = process.env.MERGE_CRF || '23';
+const MERGE_X264_PRESET = process.env.MERGE_X264_PRESET || 'veryfast';
+
+let cachedVideoEncoder = null;
+
+function pickVideoEncoder() {
+  if (cachedVideoEncoder) return cachedVideoEncoder;
+  const forced = process.env.MERGE_VIDEO_ENCODER;
+  if (forced === 'libx264' || forced === 'h264_nvenc') {
+    cachedVideoEncoder = forced;
+    return cachedVideoEncoder;
+  }
+  try {
+    const encoders = execSync('ffmpeg -hide_banner -encoders 2>/dev/null', {
+      encoding: 'utf8',
+    });
+    cachedVideoEncoder = /h264_nvenc/.test(encoders) ? 'h264_nvenc' : 'libx264';
+  } catch {
+    cachedVideoEncoder = 'libx264';
+  }
+  return cachedVideoEncoder;
+}
 
 const TRACK_FILES = {
   screen: 'screen.webm',
@@ -104,6 +132,52 @@ async function discoverInputs(stagingDir, meta) {
   return inputs;
 }
 
+function normalizeVideoChain(inputLabel, outputLabel, extraFilters = '') {
+  const mid = extraFilters ? `,${extraFilters}` : '';
+  return `[${inputLabel}]setpts=PTS-STARTPTS,scale='min(${MERGE_MAX_WIDTH},iw)':-2:flags=fast_bilinear,fps=${MERGE_FPS}${mid}[${outputLabel}]`;
+}
+
+function normalizeAudioChain(inputLabel, outputLabel) {
+  return `[${inputLabel}:a]asetpts=PTS-STARTPTS,aresample=48000[${outputLabel}]`;
+}
+
+function appendVideoEncoderArgs(args) {
+  const encoder = pickVideoEncoder();
+  const gop = MERGE_FPS * 2;
+  if (encoder === 'h264_nvenc') {
+    args.push(
+      '-c:v',
+      'h264_nvenc',
+      '-preset',
+      'fast',
+      '-rc',
+      'vbr',
+      '-cq',
+      MERGE_CRF,
+      '-b:v',
+      '0',
+      '-g',
+      String(gop)
+    );
+  } else {
+    args.push(
+      '-c:v',
+      'libx264',
+      '-preset',
+      MERGE_X264_PRESET,
+      '-crf',
+      MERGE_CRF,
+      '-threads',
+      '0',
+      '-g',
+      String(gop),
+      '-keyint_min',
+      String(MERGE_FPS)
+    );
+  }
+  args.push('-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-shortest');
+}
+
 function buildFfmpegArgs(inputs, outputPath, meta) {
   const { widthRatio, marginPx } = readMeta(meta);
   const screen = inputs.find((i) => i.trackId === 'screen');
@@ -113,7 +187,7 @@ function buildFfmpegArgs(inputs, outputPath, meta) {
   const mic = inputs.find((i) => i.trackId === 'microphone');
   const sysAudio = inputs.find((i) => i.trackId === 'system-audio');
 
-  const args = ['-y'];
+  const args = ['-y', '-fflags', '+genpts+igndts'];
   const indexed = [];
   let n = 0;
 
@@ -141,58 +215,46 @@ function buildFfmpegArgs(inputs, outputPath, meta) {
 
   const fc = [];
   if (cIdx != null) {
-    fc.push(`[${cIdx}:v]scale=iw*${widthRatio}:-2[pip]`);
-    fc.push(`[${sIdx}:v][pip]overlay=W-w-${marginPx}:H-h-${marginPx}:shortest=1[vout]`);
+    fc.push(normalizeVideoChain(`${sIdx}:v`, 'sv'));
+    fc.push(`[${cIdx}:v]setpts=PTS-STARTPTS,fps=${MERGE_FPS}[cv]`);
+    fc.push(`[cv]scale=iw*${widthRatio}:-2[pip]`);
+    fc.push(`[sv][pip]overlay=W-w-${marginPx}:H-h-${marginPx}:shortest=1[vout]`);
+  } else {
+    fc.push(normalizeVideoChain(`${sIdx}:v`, 'vout'));
   }
 
   let audioMapFilter = null;
   let audioMapDirect = null;
   if (audioOnly.length === 1) {
-    audioMapDirect = `${audioOnly[0].n}:a`;
+    const a = audioOnly[0];
+    fc.push(normalizeAudioChain(`${a.n}`, 'aout'));
+    audioMapFilter = '[aout]';
   } else if (audioOnly.length > 1) {
-    const labels = audioOnly.map((t) => `[${t.n}:a]`).join('');
-    fc.push(`${labels}amix=inputs=${audioOnly.length}:duration=longest:dropout_transition=0[aout]`);
+    audioOnly.forEach((t, i) => {
+      fc.push(normalizeAudioChain(`${t.n}`, `a${i}`));
+    });
+    const labels = audioOnly.map((_, i) => `[a${i}]`).join('');
+    fc.push(
+      `${labels}amix=inputs=${audioOnly.length}:duration=longest:dropout_transition=2[aout]`
+    );
     audioMapFilter = '[aout]';
   }
 
-  const videoMapFilter = cIdx != null ? '[vout]' : null;
-  const videoMapDirect = `${sIdx}:v`;
+  const videoMapFilter = '[vout]';
 
-  if (fc.length) {
-    args.push('-filter_complex', fc.join(';'));
-  }
-
-  if (videoMapFilter) {
-    args.push('-map', videoMapFilter);
-  } else {
-    args.push('-map', videoMapDirect);
-  }
+  args.push('-filter_complex', fc.join(';'));
+  args.push('-map', videoMapFilter);
 
   if (audioMapFilter) {
     args.push('-map', audioMapFilter);
-    args.push('-c:a', 'aac', '-b:a', '128k');
-  } else if (audioMapDirect) {
-    args.push('-map', audioMapDirect);
     args.push('-c:a', 'aac', '-b:a', '128k');
   } else {
     args.push('-map', `${sIdx}:a?`);
     args.push('-c:a', 'aac', '-b:a', '128k');
   }
 
-  args.push(
-    '-c:v',
-    'libx264',
-    '-preset',
-    'fast',
-    '-crf',
-    '23',
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    '-shortest',
-    outputPath
-  );
+  appendVideoEncoderArgs(args);
+  args.push(outputPath);
 
   return args;
 }
@@ -215,7 +277,13 @@ async function mergeScreencast({ stagingDir, meta, outputPath }) {
 
   const args = buildFfmpegArgs(inputs, outputPath, metaObj);
   // eslint-disable-next-line no-console
-  console.log('[recording] ffmpeg', args.join(' '));
+  console.log(
+    '[recording] ffmpeg',
+    pickVideoEncoder(),
+    `fps=${MERGE_FPS}`,
+    `maxW=${MERGE_MAX_WIDTH}`,
+    args.join(' ')
+  );
   await runProcess('ffmpeg', args);
 }
 

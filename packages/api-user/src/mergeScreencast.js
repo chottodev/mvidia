@@ -138,11 +138,12 @@ function normalizeVideoChain(inputLabel, outputLabel, extraFilters = '') {
 }
 
 function normalizeAudioChain(inputLabel, outputLabel) {
-  return `[${inputLabel}:a]asetpts=PTS-STARTPTS,aresample=48000[${outputLabel}]`;
+  // Старые ffmpeg/aac чувствительны к немонотонным PTS в чанкованных WebM.
+  // Принудительно пересобираем таймлайн и делаем async-ресемпл.
+  return `[${inputLabel}:a]asetpts=N/SR/TB,aresample=48000:async=1:first_pts=0[${outputLabel}]`;
 }
 
-function appendVideoEncoderArgs(args) {
-  const encoder = pickVideoEncoder();
+function appendVideoEncoderArgs(args, encoder = pickVideoEncoder()) {
   const gop = MERGE_FPS * 2;
   if (encoder === 'h264_nvenc') {
     args.push(
@@ -178,7 +179,7 @@ function appendVideoEncoderArgs(args) {
   args.push('-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-shortest');
 }
 
-function buildFfmpegArgs(inputs, outputPath, meta) {
+function buildFfmpegArgs(inputs, outputPath, meta, encoder = pickVideoEncoder()) {
   const { widthRatio, marginPx } = readMeta(meta);
   const screen = inputs.find((i) => i.trackId === 'screen');
   if (!screen) throw new Error('SCREEN_TRACK_REQUIRED');
@@ -235,7 +236,7 @@ function buildFfmpegArgs(inputs, outputPath, meta) {
     });
     const labels = audioOnly.map((_, i) => `[a${i}]`).join('');
     fc.push(
-      `${labels}amix=inputs=${audioOnly.length}:duration=longest:dropout_transition=2[aout]`
+      `${labels}amix=inputs=${audioOnly.length}:duration=longest:dropout_transition=2,aresample=48000:async=1:first_pts=0[aout]`
     );
     audioMapFilter = '[aout]';
   }
@@ -253,7 +254,7 @@ function buildFfmpegArgs(inputs, outputPath, meta) {
     args.push('-c:a', 'aac', '-b:a', '128k');
   }
 
-  appendVideoEncoderArgs(args);
+  appendVideoEncoderArgs(args, encoder);
   args.push(outputPath);
 
   return args;
@@ -275,16 +276,97 @@ async function mergeScreencast({ stagingDir, meta, outputPath }) {
     throw new Error('SCREEN_TRACK_REQUIRED');
   }
 
-  const args = buildFfmpegArgs(inputs, outputPath, metaObj);
+  const preferredEncoder = pickVideoEncoder();
+  const args = buildFfmpegArgs(inputs, outputPath, metaObj, preferredEncoder);
   // eslint-disable-next-line no-console
   console.log(
     '[recording] ffmpeg',
-    pickVideoEncoder(),
+    preferredEncoder,
     `fps=${MERGE_FPS}`,
     `maxW=${MERGE_MAX_WIDTH}`,
     args.join(' ')
   );
-  await runProcess('ffmpeg', args);
+  try {
+    await runProcess('ffmpeg', args);
+  } catch (e) {
+    const msg = e && e.message ? String(e.message) : '';
+    if (preferredEncoder === 'h264_nvenc' && /ffmpeg exit null/i.test(msg)) {
+      const cpuArgs = buildFfmpegArgs(inputs, outputPath, metaObj, 'libx264');
+      // eslint-disable-next-line no-console
+      console.warn('[recording] ffmpeg retry with libx264 due to nvenc failure');
+      // eslint-disable-next-line no-console
+      console.log('[recording] ffmpeg-retry', 'libx264', cpuArgs.join(' '));
+      await runProcess('ffmpeg', cpuArgs);
+      return;
+    }
+    const hasMic = inputs.some((i) => i.trackId === 'microphone');
+    const hasSys = inputs.some((i) => i.trackId === 'system-audio');
+    const backwardPts = /backward in time/i.test(msg);
+    if (!(backwardPts && hasMic && hasSys)) {
+      throw e;
+    }
+
+    const fallbackInputs = inputs.filter((i) => i.trackId !== 'system-audio');
+    const fallbackArgs = buildFfmpegArgs(fallbackInputs, outputPath, metaObj, preferredEncoder);
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[recording] ffmpeg retry without system-audio due to non-monotonic audio timestamps'
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      '[recording] ffmpeg-retry',
+      preferredEncoder,
+      `fps=${MERGE_FPS}`,
+      `maxW=${MERGE_MAX_WIDTH}`,
+      fallbackArgs.join(' ')
+    );
+    try {
+      await runProcess('ffmpeg', fallbackArgs);
+    } catch (e2) {
+      const msg2 = e2 && e2.message ? String(e2.message) : '';
+      if (preferredEncoder === 'h264_nvenc' && /ffmpeg exit null/i.test(msg2)) {
+        const cpuArgs = buildFfmpegArgs(fallbackInputs, outputPath, metaObj, 'libx264');
+        // eslint-disable-next-line no-console
+        console.warn('[recording] ffmpeg retry with libx264 after nvenc fallback failure');
+        // eslint-disable-next-line no-console
+        console.log('[recording] ffmpeg-retry', 'libx264', cpuArgs.join(' '));
+        await runProcess('ffmpeg', cpuArgs);
+        return;
+      }
+      if (!/backward in time/i.test(msg2)) {
+        throw e2;
+      }
+      const videoOnlyInputs = inputs.filter(
+        (i) => i.trackId === 'screen' || i.trackId === 'camera'
+      );
+      const videoOnlyArgs = buildFfmpegArgs(videoOnlyInputs, outputPath, metaObj, preferredEncoder);
+      // eslint-disable-next-line no-console
+      console.warn('[recording] ffmpeg retry without external audio tracks');
+      // eslint-disable-next-line no-console
+      console.log(
+        '[recording] ffmpeg-retry',
+        preferredEncoder,
+        `fps=${MERGE_FPS}`,
+        `maxW=${MERGE_MAX_WIDTH}`,
+        videoOnlyArgs.join(' ')
+      );
+      try {
+        await runProcess('ffmpeg', videoOnlyArgs);
+      } catch (e3) {
+        const msg3 = e3 && e3.message ? String(e3.message) : '';
+        if (preferredEncoder === 'h264_nvenc' && /ffmpeg exit null/i.test(msg3)) {
+          const cpuArgs = buildFfmpegArgs(videoOnlyInputs, outputPath, metaObj, 'libx264');
+          // eslint-disable-next-line no-console
+          console.warn('[recording] ffmpeg retry with libx264 for video-only merge');
+          // eslint-disable-next-line no-console
+          console.log('[recording] ffmpeg-retry', 'libx264', cpuArgs.join(' '));
+          await runProcess('ffmpeg', cpuArgs);
+          return;
+        }
+        throw e3;
+      }
+    }
+  }
 }
 
 module.exports = {

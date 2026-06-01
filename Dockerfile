@@ -6,7 +6,7 @@ COPY packages ./packages
 ARG USER_PUBLIC_SITE_URL=http://localhost:3001
 RUN npm ci \
   && VITE_API_USER_BASE_URL= VITE_PUBLIC_SITE_URL= npm run build -w web \
-  && VITE_API_ADMIN_BASE_URL= VITE_PUBLIC_SITE_URL="${USER_PUBLIC_SITE_URL}" npm run build -w web-admin
+  && VITE_API_ADMIN_BASE_URL= npm run build -w web-admin
 
 FROM node:22-bookworm-slim
 WORKDIR /app

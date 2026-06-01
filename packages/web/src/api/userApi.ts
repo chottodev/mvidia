@@ -14,6 +14,10 @@ export function publicSiteBase(): string {
   return (import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, '');
 }
 
+export function watchPageUrl(publicId: string): string {
+  return `${publicSiteBase()}/v/${encodeURIComponent(publicId)}`;
+}
+
 export async function uploadVideo(file: File, title: string) {
   const fd = new FormData();
   fd.append('file', file);

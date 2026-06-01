@@ -1,5 +1,15 @@
 const path = require('path');
 const fs = require('fs/promises');
+const { resolvePublicSiteUrlFromEnv } = require('../../api-user/src/publicSiteUrl');
+
+async function getConfig(req, res) {
+  const publicSiteUrl = resolvePublicSiteUrlFromEnv();
+  const userApiDocsUrl = publicSiteUrl ? `${publicSiteUrl}/api-docs` : null;
+  return res.status(200).json({
+    publicSiteUrl: publicSiteUrl || null,
+    userApiDocsUrl,
+  });
+}
 
 async function listVideos(req, res) {
   const { Video } = this.dependencies;
@@ -45,6 +55,7 @@ async function deleteVideo(req, res) {
 
 module.exports = {
   operations: {
+    getConfig,
     listVideos,
     deleteVideo,
   },

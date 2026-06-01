@@ -45,6 +45,16 @@ export type VideoRow = {
   createdAt: string;
 };
 
+export async function getConfig(a: AdminAuth) {
+  const res = await fetch(`${adminApiBase()}/config`, { headers: authHeader(a) });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (!res.ok) throw new Error(`Ошибка ${res.status}`);
+  return res.json() as Promise<{
+    publicSiteUrl: string | null;
+    userApiDocsUrl: string | null;
+  }>;
+}
+
 export async function listVideos(a: AdminAuth, offset: number, limit: number) {
   const q = new URLSearchParams({ offset: String(offset), limit: String(limit) });
   const res = await fetch(`${adminApiBase()}/videos?${q}`, { headers: authHeader(a) });

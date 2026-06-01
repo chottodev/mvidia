@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = require('path');
+const { resolvePublicSiteUrlFromEnv } = require('./publicSiteUrl');
 
 const PUBLIC_ID_PATTERN = /^[0-9A-Za-z]{20}$/;
 
@@ -12,8 +12,8 @@ function escapeHtml(value) {
 }
 
 function resolvePublicSiteUrl(req) {
-  const fromEnv = process.env.USER_PUBLIC_SITE_URL || process.env.PUBLIC_SITE_URL;
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  const fromEnv = resolvePublicSiteUrlFromEnv();
+  if (fromEnv) return fromEnv;
   const host = req.get('host');
   if (!host) return '';
   const proto = req.protocol || 'http';

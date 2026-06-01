@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { publicSiteBase, uploadVideo } from '../api/userApi';
+import { uploadVideo, watchPageUrl } from '../api/userApi';
 
 const router = useRouter();
 const title = ref('');
@@ -29,7 +29,7 @@ async function submit() {
   busy.value = true;
   try {
     const r = await uploadVideo(file.value, title.value.trim());
-    lastLink.value = `${publicSiteBase()}/v/${r.publicId}`;
+    lastLink.value = watchPageUrl(r.publicId);
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка загрузки';
   } finally {

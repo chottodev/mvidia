@@ -16,6 +16,37 @@ module.exports = {
   },
   security: [{ basicAuth: [] }],
   paths: {
+    '/config': {
+      get: {
+        operationId: 'getConfig',
+        summary: 'Настройки для UI (публичный URL сайта)',
+        responses: {
+          '200': {
+            description: 'OK',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['publicSiteUrl', 'userApiDocsUrl'],
+                  properties: {
+                    publicSiteUrl: {
+                      type: 'string',
+                      nullable: true,
+                      description: 'USER_PUBLIC_SITE_URL из .env',
+                    },
+                    userApiDocsUrl: {
+                      type: 'string',
+                      nullable: true,
+                      description: 'OpenAPI api-user: {publicSiteUrl}/api-docs',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     '/videos': {
       get: {
         operationId: 'listVideos',

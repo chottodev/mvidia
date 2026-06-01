@@ -4,6 +4,7 @@ import {
   adminApiBase,
   clearAuth,
   deleteVideo,
+  getConfig,
   loadAuth,
   listVideos,
   saveAuth,
@@ -29,17 +30,37 @@ const items = ref<
   }>
 >([]);
 
-const publicWeb = computed(
-  () => (import.meta.env.VITE_PUBLIC_SITE_URL || 'http://localhost:5173').replace(/\/$/, '')
-);
+const publicSiteUrl = ref<string | null>(null);
+const userApiDocsUrl = ref<string | null>(null);
 
 function watchUrl(publicId: string) {
-  return `${publicWeb.value}/v/${publicId}`;
+  const base = publicSiteUrl.value?.replace(/\/$/, '');
+  if (!base) return `/v/${publicId}`;
+  return `${base}/v/${publicId}`;
+}
+
+async function loadPublicSiteUrl() {
+  if (!auth.value) {
+    publicSiteUrl.value = null;
+    userApiDocsUrl.value = null;
+    return;
+  }
+  try {
+    const cfg = await getConfig(auth.value);
+    publicSiteUrl.value = cfg.publicSiteUrl;
+    userApiDocsUrl.value = cfg.userApiDocsUrl;
+  } catch {
+    publicSiteUrl.value = null;
+    userApiDocsUrl.value = null;
+  }
 }
 
 onMounted(() => {
   auth.value = loadAuth();
-  if (auth.value) void refresh();
+  if (auth.value) {
+    void loadPublicSiteUrl();
+    void refresh();
+  }
 });
 
 async function login() {
@@ -51,6 +72,7 @@ async function login() {
     saveAuth(a);
     auth.value = a;
     offset.value = 0;
+    await loadPublicSiteUrl();
     await refresh();
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка входа';
@@ -62,6 +84,8 @@ async function login() {
 function logout() {
   clearAuth();
   auth.value = null;
+  publicSiteUrl.value = null;
+  userApiDocsUrl.value = null;
   items.value = [];
   total.value = 0;
 }
@@ -113,7 +137,14 @@ function nextPage() {
   <div class="layout">
     <header class="header">
       <strong>mvidia — админка</strong>
-      <span class="meta">API: {{ adminApiBase() }}</span>
+      <span class="meta">Admin API: {{ adminApiBase() }}</span>
+      <a
+        v-if="userApiDocsUrl"
+        class="header-link"
+        :href="userApiDocsUrl"
+        target="_blank"
+        rel="noreferrer"
+      >User API — OpenAPI</a>
       <button v-if="auth" type="button" class="ghost" @click="logout">Выйти</button>
     </header>
 
@@ -135,6 +166,10 @@ function nextPage() {
           <button type="button" :disabled="busy" @click="refresh">Обновить</button>
         </div>
         <p v-if="err" class="err">{{ err }}</p>
+        <p v-if="!publicSiteUrl" class="err">
+          В .env не задан USER_PUBLIC_SITE_URL — укажите публичный URL user-сайта для ссылок «открыть».
+        </p>
+        <p v-else class="muted">Публичный сайт: {{ publicSiteUrl }}</p>
         <p class="muted">Всего: {{ total }}. Страница offset={{ offset }}, limit={{ limit }}.</p>
 
         <div class="pager">
@@ -198,6 +233,14 @@ body {
 .meta {
   opacity: 0.85;
   font-size: 0.85rem;
+}
+.header-link {
+  color: #93c5fd;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.header-link:hover {
+  text-decoration: underline;
 }
 .ghost {
   margin-left: auto;

@@ -111,6 +111,25 @@ module.exports = {
         },
       },
     },
+    '/videos/{publicId}/poster': {
+      get: {
+        operationId: 'streamVideoPoster',
+        summary: 'JPEG-постер для Open Graph (Mattermost и др.)',
+        'x-express-openapi-disable-response-validation-middleware': true,
+        parameters: [
+          {
+            name: 'publicId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 64 },
+          },
+        ],
+        responses: {
+          '200': { description: 'JPEG' },
+          '404': { description: 'Не найдено' },
+        },
+      },
+    },
     '/videos/{publicId}/file': {
       get: {
         operationId: 'streamVideoFile',

@@ -6,6 +6,7 @@ const openapi = require('express-openapi');
 const { connect, Video } = require('db');
 const handlersModule = require('./handlers');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
+const { POSTERS_SUBDIR } = require('./poster');
 
 function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) return;
@@ -30,6 +31,7 @@ async function main() {
     (process.env.UPLOAD_DIR || 'uploads').replace(/^\.\//, '')
   );
   await fs.mkdir(uploadDirAbs, { recursive: true });
+  await fs.mkdir(path.join(uploadDirAbs, POSTERS_SUBDIR), { recursive: true });
 
   const app = express();
   app.disable('x-powered-by');
@@ -51,7 +53,7 @@ async function main() {
 
   const serveUi = resolveServeUi();
   const uiDist = resolveUiDist();
-  if (serveUi && mountSpa(app, uiDist)) {
+  if (serveUi && mountSpa(app, uiDist, { Video, uploadDirAbs })) {
     // eslint-disable-next-line no-console
     console.log(`[api-user] UI: ${uiDist}`);
   } else if (serveUi) {

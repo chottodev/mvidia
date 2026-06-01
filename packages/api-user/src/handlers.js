@@ -5,6 +5,12 @@ const { randomUUID } = require('crypto');
 const multer = require('multer');
 const { customAlphabet } = require('nanoid');
 
+const {
+  generatePosterFromVideo,
+  posterPath,
+  unlinkPoster,
+} = require('./poster');
+
 const publicIdAlphabet =
   '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const createPublicId = customAlphabet(publicIdAlphabet, 20);
@@ -78,7 +84,7 @@ function createMultipartMiddleware(uploadDirAbs) {
 }
 
 async function createVideo(req, res, next) {
-  const { Video } = this.dependencies;
+  const { Video, uploadDirAbs } = this.dependencies;
 
   const fileField = (req.files || []).find((f) => f.fieldname === 'file');
   const title = (req.body && String(req.body.title || '').trim()) || '';
@@ -113,6 +119,9 @@ async function createVideo(req, res, next) {
   }
 
   const storageFileName = fileField.filename;
+  const videoPath = fileField.path;
+  const posterOut = posterPath(uploadDirAbs, storageFileName);
+
   let publicId = createPublicId();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -123,6 +132,9 @@ async function createVideo(req, res, next) {
         mimeType: 'video/mp4',
         sizeBytes: fileField.size,
       });
+      if (posterOut) {
+        await generatePosterFromVideo(videoPath, posterOut);
+      }
       return res.status(201).json({
         publicId,
         title,
@@ -134,11 +146,13 @@ async function createVideo(req, res, next) {
         publicId = createPublicId();
         continue;
       }
-      await fs.unlink(fileField.path).catch(() => {});
+      await fs.unlink(videoPath).catch(() => {});
+      if (posterOut) await unlinkPoster(uploadDirAbs, storageFileName);
       return next(e);
     }
   }
-  await fs.unlink(fileField.path).catch(() => {});
+  await fs.unlink(videoPath).catch(() => {});
+  if (posterOut) await unlinkPoster(uploadDirAbs, storageFileName);
   return res.status(500).json({ message: 'Не удалось создать запись' });
 }
 
@@ -211,11 +225,40 @@ async function streamVideoFile(req, res, next) {
   return stream.pipe(res);
 }
 
+async function streamVideoPoster(req, res, next) {
+  const { Video, uploadDirAbs } = this.dependencies;
+  const { publicId } = req.params;
+  const doc = await Video.findOne({ publicId }).lean();
+  if (!doc) {
+    return res.status(404).json({ message: 'Видео не найдено' });
+  }
+  const filePath = posterPath(uploadDirAbs, doc.storageFileName);
+  if (!filePath) {
+    return res.status(404).json({ message: 'Постер не найден' });
+  }
+
+  let stat;
+  try {
+    stat = await fs.stat(filePath);
+  } catch {
+    return res.status(404).json({ message: 'Постер не найден' });
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Content-Length', String(stat.size));
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  const stream = fsc.createReadStream(filePath);
+  stream.on('error', next);
+  return stream.pipe(res);
+}
+
 module.exports = {
   createMultipartMiddleware,
   operations: {
     createVideo,
     getVideoByPublicId,
     streamVideoFile,
+    streamVideoPoster,
   },
 };

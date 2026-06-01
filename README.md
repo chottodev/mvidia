@@ -99,6 +99,8 @@
 - Только сценарии публичного сайта: загрузка, метаданные, отдача файла с **Range** по **`publicId`**.
 - **CORS** `*` (как зафиксировано).
 - Отдельный процесс и порт; своя OpenAPI-спека и **express-openapi**.
+- **Mattermost / Open Graph:** для `GET /v/{publicId}` в HTML подставляются `og:title`, `og:url`, `og:image` (см. `packages/api-user/src/watchOg.js`). Картинка — `GET /videos/{publicId}/poster` (JPEG, кадр через **ffmpeg** при загрузке). В `.env` задайте **`USER_PUBLIC_SITE_URL`** — тот же хост, что в ссылках из UI.
+- Для постеров нужен **`ffmpeg`** на хосте (в Docker-образе уже есть). Подробнее: [docs/mattermost-link-preview-plan.md](docs/mattermost-link-preview-plan.md).
 
 ### API admin (`packages/api-admin`)
 
@@ -121,7 +123,8 @@
 ### Хранение и обработка видео
 
 - Файл: **`{internalId}.mp4`** (или согласованный шаблон); **`publicId`** только в URL и в документе Mongo.
-- Транскодирование не используется.
+- Постер для превью: **`uploads/posters/{internalId}.jpg`** (один кадр при `POST /videos`, без перекодирования ролика).
+- Транскодирование видео не используется.
 
 ## План работ (примерный)
 

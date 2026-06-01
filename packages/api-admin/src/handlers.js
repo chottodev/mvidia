@@ -36,6 +36,10 @@ async function deleteVideo(req, res) {
   }
   const filePath = path.join(uploadDirAbs, doc.storageFileName);
   await fs.unlink(filePath).catch(() => {});
+  const posterName = doc.storageFileName.replace(/\.mp4$/i, '.jpg');
+  if (posterName !== doc.storageFileName) {
+    await fs.unlink(path.join(uploadDirAbs, 'posters', posterName)).catch(() => {});
+  }
   return res.status(204).send();
 }
 

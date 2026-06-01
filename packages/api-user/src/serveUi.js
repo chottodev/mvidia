@@ -1,6 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const { mountWatchOg } = require('./watchOg');
+const { posterExists } = require('./poster');
 
 /** Собранный UI этого сервиса (локально и в Docker — packages/web/dist) */
 const UI_DIST = path.join(__dirname, '../../web/dist');
@@ -19,7 +21,7 @@ function isApiPath(urlPath) {
   return API_PATH_PREFIXES.some((p) => urlPath === p || urlPath.startsWith(`${p}/`));
 }
 
-function mountSpa(app, distDir) {
+function mountSpa(app, distDir, spaDeps = {}) {
   const resolved = path.resolve(distDir);
   if (!fs.existsSync(resolved)) {
     return false;
@@ -27,6 +29,16 @@ function mountSpa(app, distDir) {
   const indexHtml = path.join(resolved, 'index.html');
   if (!fs.existsSync(indexHtml)) {
     return false;
+  }
+
+  const { Video, uploadDirAbs } = spaDeps;
+  if (Video && uploadDirAbs) {
+    mountWatchOg(app, {
+      Video,
+      uploadDirAbs,
+      indexHtmlPath: indexHtml,
+      posterExists,
+    });
   }
 
   app.use(express.static(resolved, { index: false }));

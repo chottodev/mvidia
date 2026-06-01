@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Один образ antirek/mvidia:TAG — в compose два сервиса с разным command.
 
-TAG="${TAG:-0.0.9}"
+TAG="${TAG:-0.0.10}"
 IMAGE="${IMAGE:-antirek/mvidia}"
 
 docker build -t "${IMAGE}:${TAG}" .

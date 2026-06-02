@@ -1,4 +1,4 @@
-# Один образ: api-user → packages/web/dist, api-admin → packages/web-admin/dist
+# Один образ: api-user, api-admin, worker (ffmpeg для worker)
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

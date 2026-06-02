@@ -33,5 +33,20 @@ services:
     volumes:
       - uploads:/data/uploads
 
+  worker:
+    image: ${MVIDIA_IMAGE:-antirek/mvidia:0.0.7}
+    command: ["node", "packages/worker/src/index.js"]
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://host.docker.internal:27017/mvidia
+      UPLOAD_DIR: /data/uploads
+      WORKER_CONCURRENCY: "1"
+    volumes:
+      - uploads:/data/uploads
+    restart: unless-stopped
+
 volumes:
   uploads:

@@ -1,5 +1,21 @@
 const useProxy = import.meta.env.DEV && !import.meta.env.VITE_API_USER_BASE_URL;
 
+export type VideoStatus = 'not_ready' | 'ready' | 'failed';
+
+export type ProcessingStep = 'uploaded' | 'queued' | 'converting' | 'finalizing';
+
+export type VideoMeta = {
+  publicId: string;
+  title: string;
+  status: VideoStatus;
+  processingStep?: ProcessingStep;
+  errorMessage?: string;
+  mimeType?: string;
+  sizeBytes: number | null;
+  sourceSizeBytes?: number;
+  createdAt: string;
+};
+
 export function userApiBase(): string {
   if (useProxy) return '/__proxy_user_api';
   const fromEnv = import.meta.env.VITE_API_USER_BASE_URL;
@@ -39,23 +55,18 @@ export async function uploadVideo(file: File, title: string) {
   return res.json() as Promise<{
     publicId: string;
     title: string;
-    sizeBytes: number;
-    mimeType: string;
+    status: VideoStatus;
+    processingStep?: ProcessingStep;
+    sourceSizeBytes: number;
   }>;
 }
 
-export async function getVideoMeta(publicId: string) {
+export async function getVideoMeta(publicId: string): Promise<VideoMeta> {
   const res = await fetch(`${userApiBase()}/videos/${encodeURIComponent(publicId)}`);
   if (!res.ok) {
     throw new Error('Видео не найдено');
   }
-  return res.json() as Promise<{
-    publicId: string;
-    title: string;
-    sizeBytes: number;
-    mimeType: string;
-    createdAt: string;
-  }>;
+  return res.json() as Promise<VideoMeta>;
 }
 
 export function videoFileUrl(publicId: string): string {

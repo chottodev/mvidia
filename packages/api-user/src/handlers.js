@@ -4,60 +4,37 @@ const fsc = require('fs');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
 const { customAlphabet } = require('nanoid');
-
 const {
-  generatePosterFromVideo,
-  posterPath,
-  unlinkPoster,
-} = require('./poster');
+  VIDEO_STATUS,
+  PROCESSING_STEP,
+  videoPaths,
+  serializeVideo,
+  isVideoReady,
+} = require('db');
+const { enqueueTranscode } = require('./queue');
+const {
+  extensionFromOriginalName,
+  isAllowedUpload,
+  allowedFormatsHint,
+} = require('./uploadFormats');
 
 const publicIdAlphabet =
   '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const createPublicId = customAlphabet(publicIdAlphabet, 20);
 
 const ONE_GB = 1024 * 1024 * 1024;
-const CODEC_PROBE_BYTES = 8 * 1024 * 1024;
-
-function isMp4Upload(file) {
-  if (!file) return false;
-  const name = (file.originalname || '').toLowerCase();
-  if (!name.endsWith('.mp4')) return false;
-  const mt = (file.mimetype || '').toLowerCase();
-  return mt === 'video/mp4' || mt === 'application/octet-stream';
-}
-
-/** Браузерный <video> обычно воспроизводит MP4 с H.264 (avc1), не HEVC (hvc1). */
-async function assertBrowserPlayableMp4(filePath) {
-  const stat = await fs.stat(filePath);
-  const probeLen = Math.min(CODEC_PROBE_BYTES, stat.size);
-  const fd = await fsc.promises.open(filePath, 'r');
-  try {
-    const buf = Buffer.alloc(probeLen);
-    const { bytesRead } = await fd.read(buf, 0, probeLen, 0);
-    const sample = buf.subarray(0, bytesRead).toString('latin1');
-    const hasAvc = /avc1|avc3/.test(sample);
-    const hasHevc = /hvc1|hev1|hev\b|hvcC/.test(sample);
-    if (hasHevc && !hasAvc) {
-      const err = new Error('HEVC_NOT_SUPPORTED');
-      throw err;
-    }
-    if (!sample.includes('ftyp')) {
-      const err = new Error('INVALID_MP4');
-      throw err;
-    }
-  } finally {
-    await fd.close();
-  }
-}
 
 function createMultipartMiddleware(uploadDirAbs) {
+  const sourcesDir = path.join(uploadDirAbs, videoPaths.SOURCES_SUBDIR);
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => {
-      cb(null, uploadDirAbs);
+      cb(null, sourcesDir);
     },
-    filename: (_req, file, cb) => {
-      const internal = `${randomUUID()}.mp4`;
-      cb(null, internal);
+    filename: (req, file, cb) => {
+      const ext = extensionFromOriginalName(file.originalname);
+      const internalId = randomUUID();
+      req.mvidiaUpload = { internalId, ext };
+      cb(null, `${internalId}${ext}`);
     },
   });
   const m = multer({
@@ -83,11 +60,22 @@ function createMultipartMiddleware(uploadDirAbs) {
   };
 }
 
+async function cleanupFailedUpload(uploadDirAbs, { sourceAbs, storageFileName }) {
+  if (sourceAbs) await fs.unlink(sourceAbs).catch(() => {});
+  if (storageFileName) {
+    const delivery = videoPaths.deliveryPath(uploadDirAbs, storageFileName);
+    await fs.unlink(delivery).catch(() => {});
+    const poster = videoPaths.posterPath(uploadDirAbs, storageFileName);
+    if (poster) await fs.unlink(poster).catch(() => {});
+  }
+}
+
 async function createVideo(req, res, next) {
   const { Video, uploadDirAbs } = this.dependencies;
 
   const fileField = (req.files || []).find((f) => f.fieldname === 'file');
   const title = (req.body && String(req.body.title || '').trim()) || '';
+  const uploadMeta = req.mvidiaUpload;
 
   if (!fileField) {
     return res.status(400).json({ message: 'Поле file обязательно' });
@@ -96,31 +84,21 @@ async function createVideo(req, res, next) {
     await fs.unlink(fileField.path).catch(() => {});
     return res.status(400).json({ message: 'Название обязательно' });
   }
-  if (!isMp4Upload(fileField)) {
+  if (!isAllowedUpload(fileField)) {
     await fs.unlink(fileField.path).catch(() => {});
     return res.status(400).json({
-      message: 'Разрешён только MP4 (video/mp4, .mp4)',
+      message: `Разрешены форматы: ${allowedFormatsHint()}`,
     });
   }
-
-  try {
-    await assertBrowserPlayableMp4(fileField.path);
-  } catch (e) {
+  if (!uploadMeta || !uploadMeta.internalId) {
     await fs.unlink(fileField.path).catch(() => {});
-    if (e && e.message === 'HEVC_NOT_SUPPORTED') {
-      return res.status(400).json({
-        message:
-          'Видео в HEVC (H.265): в браузере не воспроизводится. Загрузите MP4 с кодеком H.264 (AVC).',
-      });
-    }
-    return res.status(400).json({
-      message: 'Файл не похож на корректный MP4 для воспроизведения в браузере',
-    });
+    return res.status(400).json({ message: 'Не удалось принять файл' });
   }
 
-  const storageFileName = fileField.filename;
-  const videoPath = fileField.path;
-  const posterOut = posterPath(uploadDirAbs, storageFileName);
+  const { internalId, ext } = uploadMeta;
+  const sourceFileName = videoPaths.sourceRelativePath(internalId, ext);
+  const storageFileName = videoPaths.deliveryFileName(internalId);
+  const sourceAbs = fileField.path;
 
   let publicId = createPublicId();
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -128,31 +106,43 @@ async function createVideo(req, res, next) {
       await Video.create({
         publicId,
         storageFileName,
+        sourceFileName,
+        sourceMimeType: fileField.mimetype || 'application/octet-stream',
+        sourceSizeBytes: fileField.size,
         title,
         mimeType: 'video/mp4',
-        sizeBytes: fileField.size,
+        sizeBytes: 0,
+        status: VIDEO_STATUS.NOT_READY,
+        processingStep: PROCESSING_STEP.UPLOADED,
       });
-      if (posterOut) {
-        await generatePosterFromVideo(videoPath, posterOut);
+
+      try {
+        await enqueueTranscode(publicId);
+      } catch (queueErr) {
+        await Video.deleteOne({ publicId });
+        await cleanupFailedUpload(uploadDirAbs, { sourceAbs, storageFileName });
+        return res.status(503).json({
+          message: 'Очередь обработки недоступна. Проверьте REDIS_URL.',
+        });
       }
+
       return res.status(201).json({
         publicId,
         title,
-        sizeBytes: fileField.size,
-        mimeType: 'video/mp4',
+        status: VIDEO_STATUS.NOT_READY,
+        processingStep: PROCESSING_STEP.QUEUED,
+        sourceSizeBytes: fileField.size,
       });
     } catch (e) {
       if (e && e.code === 11000) {
         publicId = createPublicId();
         continue;
       }
-      await fs.unlink(videoPath).catch(() => {});
-      if (posterOut) await unlinkPoster(uploadDirAbs, storageFileName);
+      await cleanupFailedUpload(uploadDirAbs, { sourceAbs, storageFileName });
       return next(e);
     }
   }
-  await fs.unlink(videoPath).catch(() => {});
-  if (posterOut) await unlinkPoster(uploadDirAbs, storageFileName);
+  await cleanupFailedUpload(uploadDirAbs, { sourceAbs, storageFileName });
   return res.status(500).json({ message: 'Не удалось создать запись' });
 }
 
@@ -163,23 +153,17 @@ async function getVideoByPublicId(req, res) {
   if (!doc) {
     return res.status(404).json({ message: 'Видео не найдено' });
   }
-  return res.status(200).json({
-    publicId: doc.publicId,
-    title: doc.title,
-    sizeBytes: doc.sizeBytes,
-    mimeType: doc.mimeType,
-    createdAt: doc.createdAt,
-  });
+  return res.status(200).json(serializeVideo(doc));
 }
 
 async function streamVideoFile(req, res, next) {
   const { Video, uploadDirAbs } = this.dependencies;
   const { publicId } = req.params;
   const doc = await Video.findOne({ publicId }).lean();
-  if (!doc) {
+  if (!doc || !isVideoReady(doc)) {
     return res.status(404).json({ message: 'Видео не найдено' });
   }
-  const filePath = path.join(uploadDirAbs, doc.storageFileName);
+  const filePath = videoPaths.deliveryPath(uploadDirAbs, doc.storageFileName);
 
   let stat;
   try {
@@ -229,10 +213,10 @@ async function streamVideoPoster(req, res, next) {
   const { Video, uploadDirAbs } = this.dependencies;
   const { publicId } = req.params;
   const doc = await Video.findOne({ publicId }).lean();
-  if (!doc) {
-    return res.status(404).json({ message: 'Видео не найдено' });
+  if (!doc || !isVideoReady(doc)) {
+    return res.status(404).json({ message: 'Постер не найден' });
   }
-  const filePath = posterPath(uploadDirAbs, doc.storageFileName);
+  const filePath = videoPaths.posterPath(uploadDirAbs, doc.storageFileName);
   if (!filePath) {
     return res.status(404).json({ message: 'Постер не найден' });
   }

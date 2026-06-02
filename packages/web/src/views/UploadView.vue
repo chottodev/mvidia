@@ -3,6 +3,9 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { uploadVideo, watchPageUrl } from '../api/userApi';
 
+const ACCEPT =
+  '.mp4,.mov,.mkv,.webm,.avi,video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo';
+
 const router = useRouter();
 const title = ref('');
 const file = ref<File | null>(null);
@@ -30,6 +33,7 @@ async function submit() {
   try {
     const r = await uploadVideo(file.value, title.value.trim());
     lastLink.value = watchPageUrl(r.publicId);
+    router.push({ name: 'watch', params: { publicId: r.publicId } });
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка загрузки';
   } finally {
@@ -53,7 +57,9 @@ async function copyLink() {
 
 <template>
   <h1>Загрузка видео</h1>
-  <p class="hint">Только MP4 с кодеком H.264 (AVC), до 1 ГБ. HEVC (H.265) в браузере не проигрывается.</p>
+  <p class="hint">
+    Форматы: MP4, MOV, MKV, WebM, AVI — до 1 ГБ. После загрузки видео конвертируется для браузера.
+  </p>
 
   <form class="form" @submit.prevent="submit">
     <label class="field">
@@ -61,8 +67,8 @@ async function copyLink() {
       <input v-model="title" type="text" maxlength="500" required placeholder="Например, демо ролик" />
     </label>
     <label class="field">
-      <span>Файл (.mp4)</span>
-      <input type="file" accept=".mp4,video/mp4" @change="onFile" />
+      <span>Файл</span>
+      <input type="file" :accept="ACCEPT" @change="onFile" />
     </label>
     <button type="submit" :disabled="busy">{{ busy ? 'Загрузка…' : 'Отправить' }}</button>
   </form>

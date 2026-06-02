@@ -20,15 +20,7 @@ const busy = ref(false);
 const offset = ref(0);
 const limit = ref(20);
 const total = ref(0);
-const items = ref<
-  Array<{
-    publicId: string;
-    title: string;
-    sizeBytes: number;
-    mimeType: string;
-    createdAt: string;
-  }>
->([]);
+const items = ref<import('./api/adminApi').VideoRow[]>([]);
 
 const publicSiteUrl = ref<string | null>(null);
 const userApiDocsUrl = ref<string | null>(null);
@@ -37,6 +29,18 @@ function watchUrl(publicId: string) {
   const base = publicSiteUrl.value?.replace(/\/$/, '');
   if (!base) return `/v/${publicId}`;
   return `${base}/v/${publicId}`;
+}
+
+function statusLabel(status: string) {
+  if (status === 'ready') return 'готово';
+  if (status === 'failed') return 'ошибка';
+  return 'обработка';
+}
+
+function formatSize(row: import('./api/adminApi').VideoRow) {
+  const bytes = row.status === 'ready' ? row.sizeBytes : row.sourceSizeBytes;
+  if (bytes == null) return '—';
+  return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`;
 }
 
 async function loadPublicSiteUrl() {
@@ -182,6 +186,7 @@ function nextPage() {
             <tr>
               <th>Название</th>
               <th>publicId</th>
+              <th>Статус</th>
               <th>Размер</th>
               <th>Создано</th>
               <th>Ссылка</th>
@@ -192,10 +197,17 @@ function nextPage() {
             <tr v-for="row in items" :key="row.publicId">
               <td>{{ row.title }}</td>
               <td class="mono">{{ row.publicId }}</td>
-              <td>{{ (row.sizeBytes / (1024 * 1024)).toFixed(2) }} МБ</td>
+              <td>{{ statusLabel(row.status) }}</td>
+              <td>{{ formatSize(row) }}</td>
               <td>{{ new Date(row.createdAt).toLocaleString('ru-RU') }}</td>
               <td>
-                <a :href="watchUrl(row.publicId)" target="_blank" rel="noreferrer">открыть</a>
+                <a
+                  v-if="row.status === 'ready'"
+                  :href="watchUrl(row.publicId)"
+                  target="_blank"
+                  rel="noreferrer"
+                >открыть</a>
+                <span v-else class="muted">—</span>
               </td>
               <td>
                 <button type="button" class="danger" :disabled="busy" @click="remove(row.publicId)">Удалить</button>

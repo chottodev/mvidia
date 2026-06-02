@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { isVideoReady } = require('db');
 const { resolvePublicSiteUrlFromEnv } = require('./publicSiteUrl');
 
 const PUBLIC_ID_PATTERN = /^[0-9A-Za-z]{20}$/;
@@ -64,7 +65,7 @@ function mountWatchOg(app, { Video, uploadDirAbs, indexHtmlPath, posterExists })
       return next(e);
     }
 
-    if (!doc) {
+    if (!doc || !isVideoReady(doc)) {
       res.status(404).type('text/plain; charset=utf-8').send('Видео не найдено');
       return undefined;
     }

@@ -14,6 +14,8 @@
     "start:admin": "node packages/api-admin/src/server.js",
     "dev:api-user": "npm run dev:user",
     "dev:api-admin": "npm run dev:admin",
+    "dev:worker": "node packages/worker/src/index.js",
+    "start:worker": "node packages/worker/src/index.js",
     "dev:web": "npm run dev -w web",
     "dev:web-admin": "npm run dev -w web-admin"
   },

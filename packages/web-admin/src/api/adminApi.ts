@@ -40,8 +40,12 @@ function authHeader(a: AdminAuth): HeadersInit {
 export type VideoRow = {
   publicId: string;
   title: string;
-  sizeBytes: number;
-  mimeType: string;
+  status: 'not_ready' | 'ready' | 'failed';
+  processingStep?: string;
+  errorMessage?: string;
+  sizeBytes: number | null;
+  sourceSizeBytes?: number;
+  mimeType?: string;
   createdAt: string;
 };
 

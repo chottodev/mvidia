@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { getVideoMeta, videoFileUrl, watchPageUrl } from '../api/userApi';
+import {
+  getVideoMeta,
+  videoFileUrl,
+  watchPageUrl,
+  type VideoMeta,
+  type VideoStatus,
+} from '../api/userApi';
 
 const props = defineProps<{ publicId: string }>();
 
@@ -10,19 +16,44 @@ const publicId = computed(() => (props.publicId || (route.params.publicId as str
 
 const loading = ref(true);
 const err = ref('');
-const title = ref('');
-const src = ref('');
+const meta = ref<VideoMeta | null>(null);
 const playErr = ref('');
 const copyErr = ref('');
 const copied = ref(false);
+
+const POLL_MS = 3000;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const pageLink = computed(() =>
   publicId.value ? watchPageUrl(publicId.value) : ''
 );
 
+const status = computed<VideoStatus | null>(() => meta.value?.status ?? null);
+
+const processingLabel = computed(() => {
+  const step = meta.value?.processingStep;
+  if (step === 'converting') return 'Конвертируем видео…';
+  if (step === 'finalizing') return 'Завершаем обработку…';
+  if (step === 'queued') return 'В очереди на обработку…';
+  return 'Обрабатываем видео…';
+});
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(() => {
+    void load({ silent: true });
+  }, POLL_MS);
+}
+
 function onVideoError() {
-  playErr.value =
-    'Не удалось воспроизвести. Частая причина — MP4 с HEVC (H.265): нужен H.264 (AVC). Перекодируйте файл и загрузите снова.';
+  playErr.value = 'Не удалось воспроизвести видео.';
 }
 
 async function copyPageLink() {
@@ -41,29 +72,44 @@ async function copyPageLink() {
   }
 }
 
-async function load() {
-  loading.value = true;
-  err.value = '';
-  title.value = '';
-  src.value = '';
-  playErr.value = '';
-  copyErr.value = '';
-  copied.value = false;
+async function load(opts?: { silent?: boolean }) {
+  if (!opts?.silent) {
+    loading.value = true;
+    err.value = '';
+    meta.value = null;
+    playErr.value = '';
+    copyErr.value = '';
+    copied.value = false;
+  }
   try {
-    const meta = await getVideoMeta(publicId.value);
-    title.value = meta.title;
-    document.title = `${meta.title} — mvidia`;
-    src.value = videoFileUrl(meta.publicId);
+    const m = await getVideoMeta(publicId.value);
+    meta.value = m;
+    document.title = `${m.title} — mvidia`;
+
+    if (m.status === 'not_ready') {
+      if (!pollTimer) startPoll();
+    } else {
+      stopPoll();
+    }
   } catch (e) {
-    err.value = e instanceof Error ? e.message : 'Ошибка';
-    document.title = 'mvidia';
+    stopPoll();
+    if (!opts?.silent) {
+      err.value = e instanceof Error ? e.message : 'Ошибка';
+      document.title = 'mvidia';
+    }
   } finally {
-    loading.value = false;
+    if (!opts?.silent) loading.value = false;
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  void load();
+});
+
+onUnmounted(stopPoll);
+
 watch(publicId, () => {
+  stopPoll();
   void load();
 });
 </script>
@@ -72,18 +118,31 @@ watch(publicId, () => {
   <div>
     <p v-if="loading">Загрузка…</p>
     <p v-else-if="err" class="err">{{ err }}</p>
-    <template v-else>
-      <h1>{{ title }}</h1>
-      <div class="share">
+    <template v-else-if="meta">
+      <h1>{{ meta.title }}</h1>
+
+      <div v-if="status === 'ready'" class="share">
         <a class="share-link" :href="pageLink">{{ pageLink }}</a>
         <button type="button" class="copy-btn" @click="copyPageLink">
           {{ copied ? 'Скопировано' : 'Копировать ссылку' }}
         </button>
       </div>
       <p v-if="copyErr" class="err">{{ copyErr }}</p>
-      <video v-if="src" class="player" controls playsinline @error="onVideoError">
-        <source :src="src" type="video/mp4" />
-      </video>
+
+      <p v-if="status === 'not_ready'" class="processing">{{ processingLabel }}</p>
+
+      <p v-else-if="status === 'failed'" class="err">
+        {{ meta.errorMessage || 'Не удалось обработать видео' }}
+      </p>
+
+      <video
+        v-else-if="status === 'ready'"
+        class="player"
+        controls
+        playsinline
+        :src="videoFileUrl(meta.publicId)"
+        @error="onVideoError"
+      />
       <p v-if="playErr" class="err">{{ playErr }}</p>
     </template>
   </div>
@@ -113,6 +172,10 @@ watch(publicId, () => {
 }
 .copy-btn:hover {
   background: #1e293b;
+}
+.processing {
+  color: #475569;
+  margin: 1rem 0;
 }
 .player {
   width: 100%;

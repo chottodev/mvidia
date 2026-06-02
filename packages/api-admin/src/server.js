@@ -3,7 +3,7 @@ const fs = require('fs/promises');
 const express = require('express');
 const cors = require('cors');
 const openapi = require('express-openapi');
-const { connect, Video } = require('db');
+const { connect, migrateVideosWithoutStatus, Video } = require('db');
 const handlersModule = require('./handlers');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
@@ -57,6 +57,7 @@ async function main() {
 
   const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mvidia';
   await connect(mongoUri);
+  await migrateVideosWithoutStatus();
 
   const uploadDirAbs = path.resolve(
     rootDir,

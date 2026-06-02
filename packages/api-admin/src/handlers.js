@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs/promises');
+const { serializeVideo, videoPaths } = require('db');
 const { resolvePublicSiteUrlFromEnv } = require('../../api-user/src/publicSiteUrl');
 
 async function getConfig(req, res) {
@@ -22,17 +23,10 @@ async function listVideos(req, res) {
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(limit)
-      .select({ publicId: 1, title: 1, sizeBytes: 1, mimeType: 1, createdAt: 1 })
       .lean(),
   ]);
 
-  const items = rows.map((doc) => ({
-    publicId: doc.publicId,
-    title: doc.title,
-    sizeBytes: doc.sizeBytes,
-    mimeType: doc.mimeType,
-    createdAt: doc.createdAt,
-  }));
+  const items = rows.map((doc) => serializeVideo(doc));
 
   return res.status(200).json({ total, items });
 }
@@ -44,12 +38,12 @@ async function deleteVideo(req, res) {
   if (!doc) {
     return res.status(404).json({ message: 'Видео не найдено' });
   }
-  const filePath = path.join(uploadDirAbs, doc.storageFileName);
-  await fs.unlink(filePath).catch(() => {});
-  const posterName = doc.storageFileName.replace(/\.mp4$/i, '.jpg');
-  if (posterName !== doc.storageFileName) {
-    await fs.unlink(path.join(uploadDirAbs, 'posters', posterName)).catch(() => {});
+  await fs.unlink(videoPaths.deliveryPath(uploadDirAbs, doc.storageFileName)).catch(() => {});
+  if (doc.sourceFileName) {
+    await fs.unlink(videoPaths.sourcePath(uploadDirAbs, doc.sourceFileName)).catch(() => {});
   }
+  const poster = videoPaths.posterPath(uploadDirAbs, doc.storageFileName);
+  if (poster) await fs.unlink(poster).catch(() => {});
   return res.status(204).send();
 }
 

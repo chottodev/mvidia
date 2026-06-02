@@ -10,7 +10,7 @@ module.exports = {
     '/videos': {
       post: {
         operationId: 'createVideo',
-        summary: 'Загрузить MP4',
+        summary: 'Загрузить видео (MP4, MOV, MKV, WebM, AVI)',
         requestBody: {
           required: true,
           content: {
@@ -22,7 +22,7 @@ module.exports = {
                   file: {
                     type: 'string',
                     format: 'binary',
-                    description: 'Видеофайл .mp4',
+                    description: 'Видеофайл',
                   },
                   title: {
                     type: 'string',
@@ -36,19 +36,10 @@ module.exports = {
         },
         responses: {
           '201': {
-            description: 'Создано',
+            description: 'Принято в обработку',
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['publicId', 'title', 'sizeBytes', 'mimeType'],
-                  properties: {
-                    publicId: { type: 'string' },
-                    title: { type: 'string' },
-                    sizeBytes: { type: 'integer' },
-                    mimeType: { type: 'string' },
-                  },
-                },
+                schema: { $ref: '#/components/schemas/VideoCreated' },
               },
             },
           },
@@ -56,10 +47,15 @@ module.exports = {
             description: 'Ошибка запроса',
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { message: { type: 'string' } },
-                },
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+          '503': {
+            description: 'Очередь недоступна',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
               },
             },
           },
@@ -83,17 +79,7 @@ module.exports = {
             description: 'OK',
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['publicId', 'title', 'sizeBytes', 'mimeType', 'createdAt'],
-                  properties: {
-                    publicId: { type: 'string' },
-                    title: { type: 'string' },
-                    sizeBytes: { type: 'integer' },
-                    mimeType: { type: 'string' },
-                    createdAt: { type: 'string', format: 'date-time' },
-                  },
-                },
+                schema: { $ref: '#/components/schemas/VideoMeta' },
               },
             },
           },
@@ -101,10 +87,7 @@ module.exports = {
             description: 'Не найдено',
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { message: { type: 'string' } },
-                },
+                schema: { $ref: '#/components/schemas/Message' },
               },
             },
           },
@@ -114,7 +97,7 @@ module.exports = {
     '/videos/{publicId}/poster': {
       get: {
         operationId: 'streamVideoPoster',
-        summary: 'JPEG-постер для Open Graph (Mattermost и др.)',
+        summary: 'JPEG-постер (только ready)',
         'x-express-openapi-disable-response-validation-middleware': true,
         parameters: [
           {
@@ -133,7 +116,7 @@ module.exports = {
     '/videos/{publicId}/file': {
       get: {
         operationId: 'streamVideoFile',
-        summary: 'Поток MP4 (поддержка Range)',
+        summary: 'Поток MP4 (только ready, Range)',
         'x-express-openapi-disable-response-validation-middleware': true,
         parameters: [
           {
@@ -148,6 +131,46 @@ module.exports = {
           '206': { description: 'Частичное содержимое' },
           '404': { description: 'Не найдено' },
           '416': { description: 'Недопустимый диапазон' },
+        },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      Message: {
+        type: 'object',
+        properties: { message: { type: 'string' } },
+      },
+      VideoCreated: {
+        type: 'object',
+        required: ['publicId', 'title', 'status'],
+        properties: {
+          publicId: { type: 'string' },
+          title: { type: 'string' },
+          status: { type: 'string', enum: ['not_ready', 'ready', 'failed'] },
+          processingStep: {
+            type: 'string',
+            enum: ['uploaded', 'queued', 'converting', 'finalizing'],
+          },
+          sourceSizeBytes: { type: 'integer' },
+        },
+      },
+      VideoMeta: {
+        type: 'object',
+        required: ['publicId', 'title', 'status', 'createdAt'],
+        properties: {
+          publicId: { type: 'string' },
+          title: { type: 'string' },
+          status: { type: 'string', enum: ['not_ready', 'ready', 'failed'] },
+          processingStep: {
+            type: 'string',
+            enum: ['uploaded', 'queued', 'converting', 'finalizing'],
+          },
+          errorMessage: { type: 'string' },
+          mimeType: { type: 'string' },
+          sizeBytes: { type: 'integer', nullable: true },
+          sourceSizeBytes: { type: 'integer' },
+          createdAt: { type: 'string', format: 'date-time' },
         },
       },
     },

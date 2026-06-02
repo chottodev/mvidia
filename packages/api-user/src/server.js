@@ -3,10 +3,9 @@ const fs = require('fs/promises');
 const express = require('express');
 const cors = require('cors');
 const openapi = require('express-openapi');
-const { connect, Video } = require('db');
+const { connect, migrateVideosWithoutStatus, Video, videoPaths } = require('db');
 const handlersModule = require('./handlers');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
-const { POSTERS_SUBDIR } = require('./poster');
 
 function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) return;
@@ -25,13 +24,15 @@ async function main() {
 
   const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mvidia';
   await connect(mongoUri);
+  await migrateVideosWithoutStatus();
 
   const uploadDirAbs = path.resolve(
     rootDir,
     (process.env.UPLOAD_DIR || 'uploads').replace(/^\.\//, '')
   );
   await fs.mkdir(uploadDirAbs, { recursive: true });
-  await fs.mkdir(path.join(uploadDirAbs, POSTERS_SUBDIR), { recursive: true });
+  await fs.mkdir(path.join(uploadDirAbs, videoPaths.SOURCES_SUBDIR), { recursive: true });
+  await fs.mkdir(path.join(uploadDirAbs, videoPaths.POSTERS_SUBDIR), { recursive: true });
 
   const app = express();
   app.disable('x-powered-by');

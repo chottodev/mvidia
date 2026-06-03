@@ -8,6 +8,7 @@ import {
   type VideoMeta,
   type VideoStatus,
 } from '../api/userApi';
+import { logUi } from '../log';
 
 const props = defineProps<{ publicId: string }>();
 
@@ -40,6 +41,7 @@ const processingLabel = computed(() => {
 
 function stopPoll() {
   if (pollTimer) {
+    logUi('watch', 'остановлен poll', { publicId: publicId.value });
     clearInterval(pollTimer);
     pollTimer = null;
   }
@@ -47,6 +49,7 @@ function stopPoll() {
 
 function startPoll() {
   stopPoll();
+  logUi('watch', 'начат poll статуса', { publicId: publicId.value, intervalMs: POLL_MS });
   pollTimer = setInterval(() => {
     void load({ silent: true });
   }, POLL_MS);
@@ -54,6 +57,7 @@ function startPoll() {
 
 function onVideoError() {
   playErr.value = 'Не удалось воспроизвести видео.';
+  logUi('watch', 'ошибка плеера', { publicId: publicId.value });
 }
 
 async function copyPageLink() {
@@ -81,21 +85,52 @@ async function load(opts?: { silent?: boolean }) {
     copyErr.value = '';
     copied.value = false;
   }
+  const prevStatus = meta.value?.status;
+  const prevStep = meta.value?.processingStep;
   try {
-    const m = await getVideoMeta(publicId.value);
+    const m = await getVideoMeta(publicId.value, { poll: opts?.silent });
     meta.value = m;
     document.title = `${m.title} — mvidia`;
+
+    if (!opts?.silent) {
+      logUi('watch', 'страница: состояние', {
+        publicId: publicId.value,
+        status: m.status,
+        processingStep: m.processingStep,
+      });
+    } else if (prevStatus !== m.status || prevStep !== m.processingStep) {
+      logUi('watch', 'статус изменился', {
+        publicId: publicId.value,
+        from: { status: prevStatus, step: prevStep },
+        to: { status: m.status, step: m.processingStep },
+      });
+    }
 
     if (m.status === 'not_ready') {
       if (!pollTimer) startPoll();
     } else {
       stopPoll();
+      if (m.status === 'ready') {
+        logUi('watch', 'готово к воспроизведению', {
+          publicId: publicId.value,
+          sizeBytes: m.sizeBytes,
+        });
+      } else if (m.status === 'failed') {
+        logUi('watch', 'ошибка обработки', {
+          publicId: publicId.value,
+          errorMessage: m.errorMessage,
+        });
+      }
     }
   } catch (e) {
     stopPoll();
     if (!opts?.silent) {
       err.value = e instanceof Error ? e.message : 'Ошибка';
       document.title = 'mvidia';
+      logUi('watch', 'ошибка загрузки', {
+        publicId: publicId.value,
+        message: err.value,
+      });
     }
   } finally {
     if (!opts?.silent) loading.value = false;

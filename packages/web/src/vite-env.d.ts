@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_USER_BASE_URL: string;
   readonly VITE_PUBLIC_SITE_URL: string;
+  readonly VITE_MVIDIA_LOG?: string;
 }
 
 interface ImportMeta {

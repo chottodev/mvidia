@@ -1,6 +1,7 @@
 const { Queue } = require('bullmq');
-const { PROCESSING_STEP, Video } = require('db');
+const { PROCESSING_STEP, Video, createLogger } = require('db');
 
+const log = createLogger('queue');
 const QUEUE_NAME = 'video-transcode';
 
 let queue;
@@ -23,8 +24,9 @@ function getTranscodeQueue() {
 }
 
 async function enqueueTranscode(publicId) {
+  log.info('постановка задачи в очередь', { publicId, queue: QUEUE_NAME });
   const q = getTranscodeQueue();
-  await q.add(
+  const job = await q.add(
     'transcode',
     { publicId },
     {
@@ -39,6 +41,11 @@ async function enqueueTranscode(publicId) {
     { publicId },
     { $set: { processingStep: PROCESSING_STEP.QUEUED } }
   );
+  log.info('задача в очереди', {
+    publicId,
+    jobId: job.id,
+    processingStep: PROCESSING_STEP.QUEUED,
+  });
 }
 
 module.exports = { QUEUE_NAME, enqueueTranscode, getTranscodeQueue };

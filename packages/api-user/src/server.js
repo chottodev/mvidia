@@ -3,7 +3,14 @@ const fs = require('fs/promises');
 const express = require('express');
 const cors = require('cors');
 const openapi = require('express-openapi');
-const { connect, migrateVideosWithoutStatus, Video, videoPaths } = require('db');
+const {
+  connect,
+  migrateVideosWithoutStatus,
+  Video,
+  videoPaths,
+  createLogger,
+  refreshLogLevel,
+} = require('db');
 const handlersModule = require('./handlers');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
@@ -21,10 +28,21 @@ async function main() {
   const rootDir = path.join(__dirname, '../../..');
   require('dotenv').config({ path: path.join(rootDir, '.env') });
   require('dotenv').config();
+  refreshLogLevel();
+
+  const log = createLogger('user');
+  const port = parseInt(process.env.API_USER_PORT || '3001', 10);
+
+  log.info('api-user: запуск', {
+    port,
+    logLevel: process.env.MVIDIA_LOG_LEVEL || 'info',
+    redis: process.env.REDIS_URL ? 'configured' : 'missing',
+  });
 
   const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mvidia';
   await connect(mongoUri);
   await migrateVideosWithoutStatus();
+  log.info('api-user: MongoDB подключена');
 
   const uploadDirAbs = path.resolve(
     rootDir,
@@ -62,10 +80,8 @@ async function main() {
     console.warn(`user UI не найден (${uiDist}), только API. Соберите: npm run build -w web`);
   }
 
-  const port = parseInt(process.env.API_USER_PORT || '3001', 10);
   app.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`mvidia user (API + UI) http://127.0.0.1:${port}`);
+    log.info('api-user: слушает', { url: `http://127.0.0.1:${port}` });
   });
 }
 

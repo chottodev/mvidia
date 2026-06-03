@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { uploadVideo, watchPageUrl } from '../api/userApi';
+import { logUi } from '../log';
 
 const ACCEPT =
   '.mp4,.mov,.mkv,.webm,.avi,video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo';
@@ -30,12 +31,19 @@ async function submit() {
     return;
   }
   busy.value = true;
+  logUi('upload', 'начало загрузки', {
+    title: title.value.trim(),
+    fileName: file.value.name,
+    sizeBytes: file.value.size,
+  });
   try {
     const r = await uploadVideo(file.value, title.value.trim());
     lastLink.value = watchPageUrl(r.publicId);
+    logUi('upload', 'переход на страницу просмотра', { publicId: r.publicId });
     router.push({ name: 'watch', params: { publicId: r.publicId } });
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка загрузки';
+    logUi('upload', 'сбой', { message: err.value });
   } finally {
     busy.value = false;
   }

@@ -3,6 +3,7 @@ const Video = require('./Video');
 const { VIDEO_STATUS, PROCESSING_STEP, ALLOWED_UPLOAD_EXTENSIONS } = require('./videoConstants');
 const videoPaths = require('./videoPaths');
 const { serializeVideo, isVideoReady } = require('./serializeVideo');
+const { createLogger, refreshLogLevel } = require('./logger');
 
 /**
  * @param {string} uri
@@ -38,4 +39,6 @@ module.exports = {
   videoPaths,
   serializeVideo,
   isVideoReady,
+  createLogger,
+  refreshLogLevel,
 };

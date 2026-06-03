@@ -1,5 +1,7 @@
 const fs = require('fs');
-const { isVideoReady } = require('db');
+const { isVideoReady, createLogger } = require('db');
+
+const log = createLogger('og');
 const { resolvePublicSiteUrlFromEnv } = require('./publicSiteUrl');
 
 const PUBLIC_ID_PATTERN = /^[0-9A-Za-z]{20}$/;
@@ -66,6 +68,11 @@ function mountWatchOg(app, { Video, uploadDirAbs, indexHtmlPath, posterExists })
     }
 
     if (!doc || !isVideoReady(doc)) {
+      log.debug('og: страница недоступна', {
+        publicId,
+        status: doc?.status,
+        found: !!doc,
+      });
       res.status(404).type('text/plain; charset=utf-8').send('Видео не найдено');
       return undefined;
     }
@@ -86,6 +93,8 @@ function mountWatchOg(app, { Video, uploadDirAbs, indexHtmlPath, posterExists })
       documentTitle: `${doc.title} — mvidia`,
       ogMeta,
     });
+
+    log.debug('og: HTML с meta', { publicId, hasImage: !!imageUrl });
 
     res.status(200).type('text/html; charset=utf-8');
     if (req.method === 'HEAD') {

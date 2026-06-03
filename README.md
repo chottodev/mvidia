@@ -102,6 +102,7 @@
 - **Mattermost / Open Graph:** превью только для видео в статусе **`ready`** — см. [mattermost-link-preview-plan.md](docs/mattermost-link-preview-plan.md).
 - **Конвертация:** `POST /videos` → очередь **`REDIS_URL`** → `packages/worker`. Подробнее: [video-transcode-worker-plan.md](docs/video-transcode-worker-plan.md).
 - В `.env`: **`USER_PUBLIC_SITE_URL`**, **`REDIS_URL`**.
+- **Логи:** JSON в stdout, `MVIDIA_LOG_LEVEL=debug|info|warn|error` (api-user, worker). Poll-запросы метаданных — `debug` + заголовок `X-Mvidia-Poll`. В браузере (dev): консоль `web:upload` / `web:watch`; в prod — `VITE_MVIDIA_LOG=1` при сборке.
 
 ### API admin (`packages/api-admin`)
 

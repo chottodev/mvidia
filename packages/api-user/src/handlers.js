@@ -12,6 +12,9 @@ const {
   isVideoReady,
 } = require('db');
 const { enqueueTranscode } = require('./queue');
+const { createLogger } = require('db');
+
+const log = createLogger('user');
 const {
   extensionFromOriginalName,
   isAllowedUpload,
@@ -78,14 +81,20 @@ async function createVideo(req, res, next) {
   const uploadMeta = req.mvidiaUpload;
 
   if (!fileField) {
+    log.warn('загрузка: отклонена — нет file');
     return res.status(400).json({ message: 'Поле file обязательно' });
   }
   if (!title) {
     await fs.unlink(fileField.path).catch(() => {});
+    log.warn('загрузка: отклонена — нет названия');
     return res.status(400).json({ message: 'Название обязательно' });
   }
   if (!isAllowedUpload(fileField)) {
     await fs.unlink(fileField.path).catch(() => {});
+    log.warn('загрузка: неподдерживаемый формат', {
+      originalName: fileField.originalname,
+      mimeType: fileField.mimetype,
+    });
     return res.status(400).json({
       message: `Разрешены форматы: ${allowedFormatsHint()}`,
     });
@@ -99,6 +108,16 @@ async function createVideo(req, res, next) {
   const sourceFileName = videoPaths.sourceRelativePath(internalId, ext);
   const storageFileName = videoPaths.deliveryFileName(internalId);
   const sourceAbs = fileField.path;
+
+  log.info('загрузка: файл принят', {
+    originalName: fileField.originalname,
+    ext,
+    internalId,
+    sourceFileName,
+    sizeBytes: fileField.size,
+    mimeType: fileField.mimetype,
+    title,
+  });
 
   let publicId = createPublicId();
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -116,15 +135,31 @@ async function createVideo(req, res, next) {
         processingStep: PROCESSING_STEP.UPLOADED,
       });
 
+      log.info('загрузка: запись в БД', {
+        publicId,
+        status: VIDEO_STATUS.NOT_READY,
+        processingStep: PROCESSING_STEP.UPLOADED,
+      });
+
       try {
         await enqueueTranscode(publicId);
       } catch (queueErr) {
+        log.error('загрузка: очередь недоступна', {
+          publicId,
+          error: queueErr instanceof Error ? queueErr.message : String(queueErr),
+        });
         await Video.deleteOne({ publicId });
         await cleanupFailedUpload(uploadDirAbs, { sourceAbs, storageFileName });
         return res.status(503).json({
           message: 'Очередь обработки недоступна. Проверьте REDIS_URL.',
         });
       }
+
+      log.info('загрузка: завершена, ответ клиенту', {
+        publicId,
+        status: VIDEO_STATUS.NOT_READY,
+        processingStep: PROCESSING_STEP.QUEUED,
+      });
 
       return res.status(201).json({
         publicId,
@@ -149,11 +184,27 @@ async function createVideo(req, res, next) {
 async function getVideoByPublicId(req, res) {
   const { Video } = this.dependencies;
   const { publicId } = req.params;
+  const isPoll = req.get('x-mvidia-poll') === '1';
   const doc = await Video.findOne({ publicId }).lean();
   if (!doc) {
+    log.info('метаданные: не найдено', { publicId, poll: isPoll });
     return res.status(404).json({ message: 'Видео не найдено' });
   }
-  return res.status(200).json(serializeVideo(doc));
+  const payload = serializeVideo(doc);
+  if (!isPoll) {
+    log.info('метаданные: ответ', {
+      publicId,
+      status: payload.status,
+      processingStep: payload.processingStep,
+    });
+  } else {
+    log.debug('метаданные: poll', {
+      publicId,
+      status: payload.status,
+      processingStep: payload.processingStep,
+    });
+  }
+  return res.status(200).json(payload);
 }
 
 async function streamVideoFile(req, res, next) {
@@ -161,6 +212,10 @@ async function streamVideoFile(req, res, next) {
   const { publicId } = req.params;
   const doc = await Video.findOne({ publicId }).lean();
   if (!doc || !isVideoReady(doc)) {
+    log.info('воспроизведение: недоступно', {
+      publicId,
+      status: doc?.status,
+    });
     return res.status(404).json({ message: 'Видео не найдено' });
   }
   const filePath = videoPaths.deliveryPath(uploadDirAbs, doc.storageFileName);
@@ -176,6 +231,7 @@ async function streamVideoFile(req, res, next) {
   const range = req.headers.range;
 
   if (range) {
+    log.debug('воспроизведение: range', { publicId, range, fileSize });
     const m = /^bytes=(\d*)-(\d*)$/i.exec(range);
     if (!m) {
       res.status(416).set('Content-Range', `bytes */${fileSize}`);
@@ -200,6 +256,7 @@ async function streamVideoFile(req, res, next) {
     return stream.pipe(res);
   }
 
+  log.info('воспроизведение: отдача файла', { publicId, fileSize });
   res.status(200);
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('Content-Length', String(fileSize));
@@ -214,6 +271,7 @@ async function streamVideoPoster(req, res, next) {
   const { publicId } = req.params;
   const doc = await Video.findOne({ publicId }).lean();
   if (!doc || !isVideoReady(doc)) {
+    log.debug('постер: недоступен', { publicId, status: doc?.status });
     return res.status(404).json({ message: 'Постер не найден' });
   }
   const filePath = videoPaths.posterPath(uploadDirAbs, doc.storageFileName);
@@ -228,6 +286,7 @@ async function streamVideoPoster(req, res, next) {
     return res.status(404).json({ message: 'Постер не найден' });
   }
 
+  log.debug('постер: отдача', { publicId, sizeBytes: stat.size });
   res.status(200);
   res.setHeader('Content-Type', 'image/jpeg');
   res.setHeader('Content-Length', String(stat.size));

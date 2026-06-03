@@ -1,3 +1,5 @@
+import { logUi } from '../log';
+
 const useProxy = import.meta.env.DEV && !import.meta.env.VITE_API_USER_BASE_URL;
 
 export type VideoStatus = 'not_ready' | 'ready' | 'failed';
@@ -35,6 +37,12 @@ export function watchPageUrl(publicId: string): string {
 }
 
 export async function uploadVideo(file: File, title: string) {
+  logUi('upload', 'отправка на сервер', {
+    title,
+    fileName: file.name,
+    sizeBytes: file.size,
+    mimeType: file.type,
+  });
   const fd = new FormData();
   fd.append('file', file);
   fd.append('title', title);
@@ -50,23 +58,54 @@ export async function uploadVideo(file: File, title: string) {
     } catch {
       /* ignore */
     }
+    logUi('upload', 'ошибка', { status: res.status, message: msg });
     throw new Error(msg);
   }
-  return res.json() as Promise<{
+  const body = (await res.json()) as {
     publicId: string;
     title: string;
     status: VideoStatus;
     processingStep?: ProcessingStep;
     sourceSizeBytes: number;
-  }>;
+  };
+  logUi('upload', 'принято сервером', {
+    publicId: body.publicId,
+    status: body.status,
+    processingStep: body.processingStep,
+  });
+  return body;
 }
 
-export async function getVideoMeta(publicId: string): Promise<VideoMeta> {
-  const res = await fetch(`${userApiBase()}/videos/${encodeURIComponent(publicId)}`);
+export type GetVideoMetaOptions = { poll?: boolean };
+
+export async function getVideoMeta(
+  publicId: string,
+  opts?: GetVideoMetaOptions
+): Promise<VideoMeta> {
+  const poll = opts?.poll === true;
+  const headers: HeadersInit = poll ? { 'X-Mvidia-Poll': '1' } : {};
+  const res = await fetch(`${userApiBase()}/videos/${encodeURIComponent(publicId)}`, {
+    headers,
+  });
   if (!res.ok) {
+    logUi('watch', 'метаданные: не найдено', { publicId, poll });
     throw new Error('Видео не найдено');
   }
-  return res.json() as Promise<VideoMeta>;
+  const meta = (await res.json()) as VideoMeta;
+  if (poll) {
+    logUi('watch', 'poll', {
+      publicId,
+      status: meta.status,
+      processingStep: meta.processingStep,
+    });
+  } else {
+    logUi('watch', 'метаданные загружены', {
+      publicId,
+      status: meta.status,
+      processingStep: meta.processingStep,
+    });
+  }
+  return meta;
 }
 
 export function videoFileUrl(publicId: string): string {

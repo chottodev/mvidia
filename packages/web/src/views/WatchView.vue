@@ -155,6 +155,7 @@ watch(publicId, () => {
     <p v-else-if="err" class="err">{{ err }}</p>
     <template v-else-if="meta">
       <h1>{{ meta.title }}</h1>
+      <p v-if="meta.authorName" class="author">Автор: {{ meta.authorName }}</p>
 
       <div v-if="status === 'ready'" class="share">
         <a class="share-link" :href="pageLink">{{ pageLink }}</a>
@@ -207,6 +208,10 @@ watch(publicId, () => {
 }
 .copy-btn:hover {
   background: #1e293b;
+}
+.author {
+  color: #475569;
+  margin: 0.25rem 0 0.75rem;
 }
 .processing {
   color: #475569;

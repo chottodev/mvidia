@@ -27,7 +27,8 @@ const createPublicId = customAlphabet(publicIdAlphabet, 20);
 
 const ONE_GB = 1024 * 1024 * 1024;
 
-function createMultipartMiddleware(uploadDirAbs) {
+function createMultipartMiddleware(uploadDirAbs, dependencies) {
+  const { attachOptionalUser } = require('./authMiddleware');
   const sourcesDir = path.join(uploadDirAbs, videoPaths.SOURCES_SUBDIR);
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => {
@@ -58,7 +59,9 @@ function createMultipartMiddleware(uploadDirAbs) {
         const list = filesMap[fieldname];
         req.body[fieldname] = list.length > 1 ? list.map(() => '') : '';
       });
-      next();
+      attachOptionalUser(req, dependencies)
+        .then(() => next())
+        .catch(next);
     });
   };
 }
@@ -119,6 +122,14 @@ async function createVideo(req, res, next) {
     title,
   });
 
+  const authorUser = req.mvidiaUser || null;
+  const authorFields = authorUser
+    ? {
+        authorUserId: authorUser._id,
+        authorNameSnapshot: String(authorUser.name).trim(),
+      }
+    : {};
+
   let publicId = createPublicId();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -133,12 +144,14 @@ async function createVideo(req, res, next) {
         sizeBytes: 0,
         status: VIDEO_STATUS.NOT_READY,
         processingStep: PROCESSING_STEP.UPLOADED,
+        ...authorFields,
       });
 
       log.info('загрузка: запись в БД', {
         publicId,
         status: VIDEO_STATUS.NOT_READY,
         processingStep: PROCESSING_STEP.UPLOADED,
+        authorUserId: authorUser ? String(authorUser._id) : null,
       });
 
       try {
@@ -296,6 +309,9 @@ async function streamVideoPoster(req, res, next) {
   return stream.pipe(res);
 }
 
+const authHandlers = require('./authHandlers');
+const meHandlers = require('./meHandlers');
+
 module.exports = {
   createMultipartMiddleware,
   operations: {
@@ -303,5 +319,12 @@ module.exports = {
     getVideoByPublicId,
     streamVideoFile,
     streamVideoPoster,
+    register: authHandlers.register,
+    login: authHandlers.login,
+    logout: authHandlers.logout,
+    getMe: meHandlers.getMe,
+    patchMe: meHandlers.patchMe,
+    patchMePassword: meHandlers.patchMePassword,
+    listMyVideos: meHandlers.listMyVideos,
   },
 };

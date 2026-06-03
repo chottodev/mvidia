@@ -9,6 +9,9 @@ function serializeVideo(doc) {
     status,
     createdAt: doc.createdAt,
   };
+  if (doc.authorNameSnapshot) {
+    base.authorName = doc.authorNameSnapshot;
+  }
 
   if (status === VIDEO_STATUS.READY) {
     return {

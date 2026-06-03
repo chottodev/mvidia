@@ -6,12 +6,14 @@ const openapi = require('express-openapi');
 const {
   connect,
   migrateVideosWithoutStatus,
+  User,
   Video,
   videoPaths,
   createLogger,
   refreshLogLevel,
 } = require('db');
 const handlersModule = require('./handlers');
+const { bearerAuthSecurityHandler } = require('./authMiddleware');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
 function errorMiddleware(err, req, res, _next) {
@@ -55,8 +57,10 @@ async function main() {
   const app = express();
   app.disable('x-powered-by');
   app.use(cors({ origin: '*' }));
+  app.use(express.json({ limit: '32kb' }));
 
-  const multipartMw = handlersModule.createMultipartMiddleware(uploadDirAbs);
+  const dependencies = { User, Video, uploadDirAbs };
+  const multipartMw = handlersModule.createMultipartMiddleware(uploadDirAbs, dependencies);
 
   await openapi.initialize({
     app,
@@ -66,13 +70,16 @@ async function main() {
       'multipart/form-data': multipartMw,
     },
     operations: handlersModule.operations,
-    dependencies: { Video, uploadDirAbs },
+    dependencies,
+    securityHandlers: {
+      bearerAuth: bearerAuthSecurityHandler(dependencies),
+    },
     errorMiddleware,
   });
 
   const serveUi = resolveServeUi();
   const uiDist = resolveUiDist();
-  if (serveUi && mountSpa(app, uiDist, { Video, uploadDirAbs })) {
+  if (serveUi && mountSpa(app, uiDist, dependencies)) {
     // eslint-disable-next-line no-console
     console.log(`[api-user] UI: ${uiDist}`);
   } else if (serveUi) {

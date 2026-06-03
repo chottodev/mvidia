@@ -92,6 +92,11 @@ module.exports = {
                           sizeBytes: { type: 'integer' },
                           mimeType: { type: 'string' },
                           createdAt: { type: 'string', format: 'date-time' },
+                          status: { type: 'string' },
+                          authorName: {
+                            type: 'string',
+                            description: 'Имя автора (snapshot), пусто для гостевых',
+                          },
                         },
                       },
                     },

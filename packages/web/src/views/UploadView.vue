@@ -67,6 +67,7 @@ async function copyLink() {
   <h1>Загрузка видео</h1>
   <p class="hint">
     Форматы: MP4, MOV, MKV, WebM, AVI — до 1 ГБ. После загрузки видео конвертируется для браузера.
+    Если вы вошли в аккаунт, к ролику будет привязано ваше имя.
   </p>
 
   <form class="form" @submit.prevent="submit">

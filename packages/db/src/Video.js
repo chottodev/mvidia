@@ -24,6 +24,14 @@ const videoSchema = new mongoose.Schema(
       required: false,
     },
     errorMessage: { type: String, maxlength: 2000 },
+    authorUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+      sparse: true,
+    },
+    authorNameSnapshot: { type: String, maxlength: 100, default: null },
   },
   { timestamps: true }
 );

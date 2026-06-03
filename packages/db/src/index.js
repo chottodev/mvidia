@@ -1,8 +1,10 @@
 const mongoose = require('mongoose');
 const Video = require('./Video');
+const User = require('./User');
 const { VIDEO_STATUS, PROCESSING_STEP, ALLOWED_UPLOAD_EXTENSIONS } = require('./videoConstants');
 const videoPaths = require('./videoPaths');
 const { serializeVideo, isVideoReady } = require('./serializeVideo');
+const { serializeUser } = require('./serializeUser');
 const { createLogger, refreshLogLevel } = require('./logger');
 
 /**
@@ -33,11 +35,13 @@ module.exports = {
   connect,
   migrateVideosWithoutStatus,
   Video,
+  User,
   VIDEO_STATUS,
   PROCESSING_STEP,
   ALLOWED_UPLOAD_EXTENSIONS,
   videoPaths,
   serializeVideo,
+  serializeUser,
   isVideoReady,
   createLogger,
   refreshLogLevel,

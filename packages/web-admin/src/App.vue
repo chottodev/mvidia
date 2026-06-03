@@ -186,6 +186,7 @@ function nextPage() {
             <tr>
               <th>Название</th>
               <th>publicId</th>
+              <th>Автор</th>
               <th>Статус</th>
               <th>Размер</th>
               <th>Создано</th>
@@ -197,6 +198,7 @@ function nextPage() {
             <tr v-for="row in items" :key="row.publicId">
               <td>{{ row.title }}</td>
               <td class="mono">{{ row.publicId }}</td>
+              <td>{{ row.authorName || '—' }}</td>
               <td>{{ statusLabel(row.status) }}</td>
               <td>{{ formatSize(row) }}</td>
               <td>{{ new Date(row.createdAt).toLocaleString('ru-RU') }}</td>

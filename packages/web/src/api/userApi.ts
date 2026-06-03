@@ -1,36 +1,11 @@
+import { bearerHeaders } from './authApi';
+import { publicSiteBase, userApiBase } from './base';
 import { logUi } from '../log';
 
-const useProxy = import.meta.env.DEV && !import.meta.env.VITE_API_USER_BASE_URL;
+export { userApiBase, publicSiteBase };
 
-export type VideoStatus = 'not_ready' | 'ready' | 'failed';
-
-export type ProcessingStep = 'uploaded' | 'queued' | 'converting' | 'finalizing';
-
-export type VideoMeta = {
-  publicId: string;
-  title: string;
-  status: VideoStatus;
-  processingStep?: ProcessingStep;
-  errorMessage?: string;
-  mimeType?: string;
-  sizeBytes: number | null;
-  sourceSizeBytes?: number;
-  createdAt: string;
-};
-
-export function userApiBase(): string {
-  if (useProxy) return '/__proxy_user_api';
-  const fromEnv = import.meta.env.VITE_API_USER_BASE_URL;
-  if (fromEnv != null && String(fromEnv).length > 0) {
-    return String(fromEnv).replace(/\/$/, '');
-  }
-  if (import.meta.env.PROD) return '';
-  return 'http://127.0.0.1:3001';
-}
-
-export function publicSiteBase(): string {
-  return (import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, '');
-}
+import type { VideoMeta, VideoStatus, ProcessingStep } from './types';
+export type { VideoMeta, VideoStatus, ProcessingStep } from './types';
 
 export function watchPageUrl(publicId: string): string {
   return `${publicSiteBase()}/v/${encodeURIComponent(publicId)}`;
@@ -48,6 +23,7 @@ export async function uploadVideo(file: File, title: string) {
   fd.append('title', title);
   const res = await fetch(`${userApiBase()}/videos`, {
     method: 'POST',
+    headers: bearerHeaders(),
     body: fd,
   });
   if (!res.ok) {

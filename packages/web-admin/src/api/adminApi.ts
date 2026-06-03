@@ -47,6 +47,7 @@ export type VideoRow = {
   sourceSizeBytes?: number;
   mimeType?: string;
   createdAt: string;
+  authorName?: string;
 };
 
 export async function getConfig(a: AdminAuth) {

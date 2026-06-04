@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { VIDEO_STATUS, PROCESSING_STEP } = require('./videoConstants');
+const { VIDEO_STATUS, PROCESSING_STEP, VIDEO_VISIBILITY } = require('./videoConstants');
 
 const videoSchema = new mongoose.Schema(
   {
@@ -8,7 +8,14 @@ const videoSchema = new mongoose.Schema(
     sourceFileName: { type: String, required: true },
     sourceMimeType: { type: String, required: true },
     sourceSizeBytes: { type: Number, required: true, min: 0 },
-    title: { type: String, required: true, trim: true, maxlength: 500 },
+    title: { type: String, required: true, trim: true, maxlength: 75 },
+    description: { type: String, default: '', trim: true, maxlength: 300 },
+    visibility: {
+      type: String,
+      enum: Object.values(VIDEO_VISIBILITY),
+      default: VIDEO_VISIBILITY.PUBLIC,
+      index: true,
+    },
     mimeType: { type: String, required: true, default: 'video/mp4' },
     sizeBytes: { type: Number, default: 0, min: 0 },
     status: {

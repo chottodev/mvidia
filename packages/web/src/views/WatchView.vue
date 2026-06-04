@@ -2,10 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
+  fetchVideoBlobUrl,
   getVideoMeta,
+  isVideoHidden,
   videoFileUrl,
   watchPageUrl,
   type VideoMeta,
+  type VideoHidden,
   type VideoStatus,
 } from '../api/userApi';
 import { logUi } from '../log';
@@ -18,12 +21,15 @@ const publicId = computed(() => (props.publicId || (route.params.publicId as str
 const loading = ref(true);
 const err = ref('');
 const meta = ref<VideoMeta | null>(null);
+const hidden = ref<VideoHidden | null>(null);
+const playSrc = ref('');
 const playErr = ref('');
 const copyErr = ref('');
 const copied = ref(false);
 
 const POLL_MS = 3000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let blobUrl: string | null = null;
 
 const pageLink = computed(() =>
   publicId.value ? watchPageUrl(publicId.value) : ''
@@ -39,6 +45,14 @@ const processingLabel = computed(() => {
   return 'Обрабатываем видео…';
 });
 
+function revokeBlob() {
+  if (blobUrl) {
+    URL.revokeObjectURL(blobUrl);
+    blobUrl = null;
+  }
+  playSrc.value = '';
+}
+
 function stopPoll() {
   if (pollTimer) {
     logUi('watch', 'остановлен poll', { publicId: publicId.value });
@@ -49,15 +63,29 @@ function stopPoll() {
 
 function startPoll() {
   stopPoll();
-  logUi('watch', 'начат poll статуса', { publicId: publicId.value, intervalMs: POLL_MS });
   pollTimer = setInterval(() => {
     void load({ silent: true });
   }, POLL_MS);
 }
 
+async function setupPlayback(m: VideoMeta) {
+  revokeBlob();
+  playErr.value = '';
+  if (m.status !== 'ready') return;
+  if (m.visibility === 'private') {
+    try {
+      blobUrl = await fetchVideoBlobUrl(m.publicId);
+      playSrc.value = blobUrl;
+    } catch (e) {
+      playErr.value = e instanceof Error ? e.message : 'Не удалось загрузить видео';
+    }
+  } else {
+    playSrc.value = videoFileUrl(m.publicId);
+  }
+}
+
 function onVideoError() {
   playErr.value = 'Не удалось воспроизвести видео.';
-  logUi('watch', 'ошибка плеера', { publicId: publicId.value });
 }
 
 async function copyPageLink() {
@@ -81,6 +109,8 @@ async function load(opts?: { silent?: boolean }) {
     loading.value = true;
     err.value = '';
     meta.value = null;
+    hidden.value = null;
+    revokeBlob();
     playErr.value = '';
     copyErr.value = '';
     copied.value = false;
@@ -89,37 +119,32 @@ async function load(opts?: { silent?: boolean }) {
   const prevStep = meta.value?.processingStep;
   try {
     const m = await getVideoMeta(publicId.value, { poll: opts?.silent });
+    if (isVideoHidden(m)) {
+      stopPoll();
+      hidden.value = m;
+      meta.value = null;
+      revokeBlob();
+      document.title = 'Видео скрыто — mvidia';
+      return;
+    }
+    hidden.value = null;
     meta.value = m;
     document.title = `${m.title} — mvidia`;
 
-    if (!opts?.silent) {
-      logUi('watch', 'страница: состояние', {
-        publicId: publicId.value,
-        status: m.status,
-        processingStep: m.processingStep,
-      });
-    } else if (prevStatus !== m.status || prevStep !== m.processingStep) {
-      logUi('watch', 'статус изменился', {
-        publicId: publicId.value,
-        from: { status: prevStatus, step: prevStep },
-        to: { status: m.status, step: m.processingStep },
-      });
-    }
-
     if (m.status === 'not_ready') {
+      revokeBlob();
       if (!pollTimer) startPoll();
     } else {
       stopPoll();
       if (m.status === 'ready') {
-        logUi('watch', 'готово к воспроизведению', {
-          publicId: publicId.value,
-          sizeBytes: m.sizeBytes,
-        });
-      } else if (m.status === 'failed') {
-        logUi('watch', 'ошибка обработки', {
-          publicId: publicId.value,
-          errorMessage: m.errorMessage,
-        });
+        const needReload =
+          !opts?.silent ||
+          prevStatus !== 'ready' ||
+          playSrc.value === '' ||
+          (m.visibility === 'private' && !blobUrl);
+        if (needReload) await setupPlayback(m);
+      } else {
+        revokeBlob();
       }
     }
   } catch (e) {
@@ -127,10 +152,6 @@ async function load(opts?: { silent?: boolean }) {
     if (!opts?.silent) {
       err.value = e instanceof Error ? e.message : 'Ошибка';
       document.title = 'mvidia';
-      logUi('watch', 'ошибка загрузки', {
-        publicId: publicId.value,
-        message: err.value,
-      });
     }
   } finally {
     if (!opts?.silent) loading.value = false;
@@ -141,7 +162,10 @@ onMounted(() => {
   void load();
 });
 
-onUnmounted(stopPoll);
+onUnmounted(() => {
+  stopPoll();
+  revokeBlob();
+});
 
 watch(publicId, () => {
   stopPoll();
@@ -153,44 +177,139 @@ watch(publicId, () => {
   <div>
     <p v-if="loading">Загрузка…</p>
     <p v-else-if="err" class="err">{{ err }}</p>
+    <section v-else-if="hidden" class="hidden-box">
+      <h1>Видео скрыто</h1>
+      <p>{{ hidden.message }}</p>
+    </section>
     <template v-else-if="meta">
-      <h1>{{ meta.title }}</h1>
-      <p v-if="meta.authorName" class="author">Автор: {{ meta.authorName }}</p>
-
-      <div v-if="status === 'ready'" class="share">
-        <a class="share-link" :href="pageLink">{{ pageLink }}</a>
-        <button type="button" class="copy-btn" @click="copyPageLink">
-          {{ copied ? 'Скопировано' : 'Копировать ссылку' }}
-        </button>
+      <div class="title-row">
+        <h1>{{ meta.title }}</h1>
+        <RouterLink
+          v-if="meta.canEdit"
+          class="edit-btn"
+          :to="{ name: 'editVideo', params: { publicId: meta.publicId } }"
+          title="Редактировать"
+          aria-label="Редактировать видео"
+        >
+          <svg class="edit-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
+            />
+          </svg>
+        </RouterLink>
       </div>
-      <p v-if="copyErr" class="err">{{ copyErr }}</p>
 
-      <p v-if="status === 'not_ready'" class="processing">{{ processingLabel }}</p>
+      <div class="media">
+        <p v-if="status === 'not_ready'" class="processing">{{ processingLabel }}</p>
 
-      <p v-else-if="status === 'failed'" class="err">
-        {{ meta.errorMessage || 'Не удалось обработать видео' }}
-      </p>
+        <p v-else-if="status === 'failed'" class="err">
+          {{ meta.errorMessage || 'Не удалось обработать видео' }}
+        </p>
 
-      <video
-        v-else-if="status === 'ready'"
-        class="player"
-        controls
-        playsinline
-        :src="videoFileUrl(meta.publicId)"
-        @error="onVideoError"
-      />
-      <p v-if="playErr" class="err">{{ playErr }}</p>
+        <video
+          v-else-if="status === 'ready' && playSrc"
+          class="player"
+          controls
+          playsinline
+          :src="playSrc"
+          @error="onVideoError"
+        />
+        <p v-if="playErr" class="err">{{ playErr }}</p>
+      </div>
+
+      <div class="below">
+        <p v-if="meta.authorName" class="author">Автор: {{ meta.authorName }}</p>
+        <p v-if="meta.visibility === 'private'" class="badge">Только вы видите это видео</p>
+        <p v-if="meta.description" class="description">{{ meta.description }}</p>
+
+        <div v-if="status === 'ready'" class="share">
+          <a class="share-link" :href="pageLink">{{ pageLink }}</a>
+          <button type="button" class="copy-btn" @click="copyPageLink">
+            {{ copied ? 'Скопировано' : 'Копировать ссылку' }}
+          </button>
+        </div>
+        <p v-if="copyErr" class="err">{{ copyErr }}</p>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+.hidden-box {
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.hidden-box h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.title-row h1 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+.edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin-top: 0.15rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.edit-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+.edit-icon {
+  display: block;
+}
+.media {
+  margin-bottom: 1rem;
+}
+.below {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.description {
+  color: #334155;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.badge {
+  display: inline-block;
+  width: fit-content;
+  font-size: 0.85rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  margin: 0;
+}
 .share {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  margin: 0.5rem 0 1rem;
+  margin-top: 0.25rem;
 }
 .share-link {
   font-size: 0.9rem;
@@ -206,24 +325,25 @@ watch(publicId, () => {
   font-weight: 600;
   cursor: pointer;
 }
-.copy-btn:hover {
-  background: #1e293b;
-}
 .author {
   color: #475569;
-  margin: 0.25rem 0 0.75rem;
+  margin: 0;
 }
 .processing {
   color: #475569;
-  margin: 1rem 0;
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
 }
 .player {
   width: 100%;
   max-height: 70vh;
   background: #000;
   border-radius: 8px;
+  display: block;
 }
 .err {
   color: #b91c1c;
+  margin: 0;
 }
 </style>

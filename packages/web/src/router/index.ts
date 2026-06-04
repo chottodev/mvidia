@@ -6,6 +6,7 @@ import LoginView from '../views/LoginView.vue';
 import RegisterView from '../views/RegisterView.vue';
 import ProfileView from '../views/ProfileView.vue';
 import MyVideosView from '../views/MyVideosView.vue';
+import EditVideoView from '../views/EditVideoView.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -24,6 +25,12 @@ export const router = createRouter({
       path: '/my/videos',
       name: 'myVideos',
       component: MyVideosView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/my/videos/:publicId/edit',
+      name: 'editVideo',
+      component: EditVideoView,
       meta: { requiresAuth: true },
     },
   ],

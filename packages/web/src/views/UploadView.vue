@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { uploadVideo, watchPageUrl } from '../api/userApi';
+import { uploadVideo, watchPageUrl, type VideoVisibility } from '../api/userApi';
+import { isLoggedIn } from '../api/authApi';
 import { logUi } from '../log';
 
 const ACCEPT =
   '.mp4,.mov,.mkv,.webm,.avi,video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo';
 
 const router = useRouter();
+const loggedIn = isLoggedIn();
 const title = ref('');
+const description = ref('');
+const visibility = ref<VideoVisibility>('public');
 const file = ref<File | null>(null);
 const busy = ref(false);
 const err = ref('');
@@ -31,15 +35,12 @@ async function submit() {
     return;
   }
   busy.value = true;
-  logUi('upload', 'начало загрузки', {
-    title: title.value.trim(),
-    fileName: file.value.name,
-    sizeBytes: file.value.size,
-  });
   try {
-    const r = await uploadVideo(file.value, title.value.trim());
+    const r = await uploadVideo(file.value, title.value.trim(), {
+      description: description.value.trim() || undefined,
+      visibility: loggedIn ? visibility.value : 'public',
+    });
     lastLink.value = watchPageUrl(r.publicId);
-    logUi('upload', 'переход на страницу просмотра', { publicId: r.publicId });
     router.push({ name: 'watch', params: { publicId: r.publicId } });
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка загрузки';
@@ -48,32 +49,30 @@ async function submit() {
     busy.value = false;
   }
 }
-
-function goWatch() {
-  const m = /\/v\/([^/?#]+)/.exec(lastLink.value);
-  if (m) router.push({ name: 'watch', params: { publicId: m[1] } });
-}
-
-async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(lastLink.value);
-  } catch {
-    err.value = 'Не удалось скопировать ссылку';
-  }
-}
 </script>
 
 <template>
   <h1>Загрузка видео</h1>
   <p class="hint">
-    Форматы: MP4, MOV, MKV, WebM, AVI — до 1 ГБ. После загрузки видео конвертируется для браузера.
-    Если вы вошли в аккаунт, к ролику будет привязано ваше имя.
+    Форматы: MP4, MOV, MKV, WebM, AVI — до 1 ГБ. Название до 75 символов, описание до 300.
+    <template v-if="loggedIn"> Можно скрыть ролик от других пользователей.</template>
   </p>
 
   <form class="form" @submit.prevent="submit">
     <label class="field">
       <span>Название</span>
-      <input v-model="title" type="text" maxlength="500" required placeholder="Например, демо ролик" />
+      <input v-model="title" type="text" maxlength="75" required placeholder="Например, демо" />
+    </label>
+    <label class="field">
+      <span>Описание (необязательно)</span>
+      <textarea v-model="description" maxlength="300" rows="3" placeholder="Кратко о ролике" />
+    </label>
+    <label v-if="loggedIn" class="field">
+      <span>Видимость</span>
+      <select v-model="visibility">
+        <option value="public">Всем по ссылке</option>
+        <option value="private">Скрыто (только вы)</option>
+      </select>
     </label>
     <label class="field">
       <span>Файл</span>
@@ -83,17 +82,6 @@ async function copyLink() {
   </form>
 
   <p v-if="err" class="err">{{ err }}</p>
-
-  <section v-if="lastLink" class="result">
-    <h2>Готово</h2>
-    <p>
-      <a :href="lastLink">{{ lastLink }}</a>
-    </p>
-    <div class="row">
-      <button type="button" @click="copyLink">Копировать ссылку</button>
-      <button type="button" @click="goWatch">Открыть плеер</button>
-    </div>
-  </section>
 </template>
 
 <style scoped>
@@ -111,10 +99,13 @@ async function copyLink() {
   flex-direction: column;
   gap: 0.35rem;
 }
-.field input[type='text'] {
+.field input[type='text'],
+.field textarea,
+.field select {
   padding: 0.5rem 0.65rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
+  font: inherit;
 }
 button {
   padding: 0.55rem 1rem;
@@ -127,26 +118,9 @@ button {
 }
 button:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
 }
 .err {
   color: #b91c1c;
   margin-top: 1rem;
-}
-.result {
-  margin-top: 2rem;
-  padding: 1rem;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-}
-.row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
-}
-.row button {
-  background: #0f172a;
 }
 </style>

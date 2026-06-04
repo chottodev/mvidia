@@ -11,6 +11,14 @@ const PROCESSING_STEP = {
   FINALIZING: 'finalizing',
 };
 
+const VIDEO_VISIBILITY = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+};
+
+const VIDEO_TITLE_MAX = 75;
+const VIDEO_DESCRIPTION_MAX = 300;
+
 /** @type {Record<string, string[]>} */
 const ALLOWED_UPLOAD_EXTENSIONS = {
   '.mp4': ['video/mp4', 'application/octet-stream'],
@@ -23,5 +31,8 @@ const ALLOWED_UPLOAD_EXTENSIONS = {
 module.exports = {
   VIDEO_STATUS,
   PROCESSING_STEP,
+  VIDEO_VISIBILITY,
+  VIDEO_TITLE_MAX,
+  VIDEO_DESCRIPTION_MAX,
   ALLOWED_UPLOAD_EXTENSIONS,
 };

@@ -17,6 +17,10 @@ function statusLabel(row: VideoMeta) {
   return 'обработка';
 }
 
+function visibilityLabel(row: VideoMeta) {
+  return row.visibility === 'private' ? 'скрыто' : 'всем';
+}
+
 async function load() {
   busy.value = true;
   err.value = '';
@@ -64,7 +68,13 @@ onMounted(() => {
         <RouterLink :to="{ name: 'watch', params: { publicId: row.publicId } }">
           {{ row.title }}
         </RouterLink>
-        <span class="meta">{{ statusLabel(row) }} · {{ new Date(row.createdAt).toLocaleString('ru-RU') }}</span>
+        <span class="meta">
+          {{ visibilityLabel(row) }} · {{ statusLabel(row) }} ·
+          {{ new Date(row.createdAt).toLocaleString('ru-RU') }}
+        </span>
+        <RouterLink class="edit" :to="{ name: 'editVideo', params: { publicId: row.publicId } }">
+          Изменить
+        </RouterLink>
       </li>
     </ul>
     <p v-else-if="!err" class="muted">Вы ещё не загружали видео под этим аккаунтом.</p>
@@ -109,5 +119,11 @@ onMounted(() => {
   font-size: 0.85rem;
   color: #64748b;
   margin-top: 0.2rem;
+}
+.edit {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: #475569;
 }
 </style>

@@ -276,7 +276,15 @@ module.exports = {
                   title: {
                     type: 'string',
                     minLength: 1,
-                    maxLength: 500,
+                    maxLength: 75,
+                  },
+                  description: {
+                    type: 'string',
+                    maxLength: 300,
+                  },
+                  visibility: {
+                    type: 'string',
+                    enum: ['public', 'private'],
                   },
                 },
               },
@@ -325,6 +333,50 @@ module.exports = {
         ],
         responses: {
           '200': {
+            description: 'OK (полные meta или hidden)',
+            content: {
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/VideoMeta' },
+                    { $ref: '#/components/schemas/VideoHidden' },
+                  ],
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+        },
+      },
+      patch: {
+        operationId: 'patchVideo',
+        summary: 'Изменить своё видео (title, description, visibility)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'publicId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 64 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/VideoPatch' },
+            },
+          },
+        },
+        responses: {
+          '200': {
             description: 'OK',
             content: {
               'application/json': {
@@ -332,8 +384,32 @@ module.exports = {
               },
             },
           },
+          '400': {
+            description: 'Ошибка валидации',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+          '403': {
+            description: 'Не владелец или гостевое видео',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
           '404': {
             description: 'Не найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+          '401': {
+            description: 'Требуется авторизация',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/Message' },
@@ -453,10 +529,12 @@ module.exports = {
       },
       VideoCreated: {
         type: 'object',
-        required: ['publicId', 'title', 'status'],
+        required: ['publicId', 'title', 'status', 'visibility'],
         properties: {
           publicId: { type: 'string' },
           title: { type: 'string' },
+          description: { type: 'string' },
+          visibility: { type: 'string', enum: ['public', 'private'] },
           status: { type: 'string', enum: ['not_ready', 'ready', 'failed'] },
           processingStep: {
             type: 'string',
@@ -465,12 +543,32 @@ module.exports = {
           sourceSizeBytes: { type: 'integer' },
         },
       },
+      VideoHidden: {
+        type: 'object',
+        required: ['publicId', 'visibility', 'hidden', 'message'],
+        properties: {
+          publicId: { type: 'string' },
+          visibility: { type: 'string', enum: ['private'] },
+          hidden: { type: 'boolean', enum: [true] },
+          message: { type: 'string' },
+        },
+      },
+      VideoPatch: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 75 },
+          description: { type: 'string', maxLength: 300 },
+          visibility: { type: 'string', enum: ['public', 'private'] },
+        },
+      },
       VideoMeta: {
         type: 'object',
-        required: ['publicId', 'title', 'status', 'createdAt'],
+        required: ['publicId', 'title', 'visibility', 'status', 'createdAt'],
         properties: {
           publicId: { type: 'string' },
           title: { type: 'string' },
+          description: { type: 'string' },
+          visibility: { type: 'string', enum: ['public', 'private'] },
           status: { type: 'string', enum: ['not_ready', 'ready', 'failed'] },
           processingStep: {
             type: 'string',
@@ -482,6 +580,10 @@ module.exports = {
           sourceSizeBytes: { type: 'integer' },
           createdAt: { type: 'string', format: 'date-time' },
           authorName: { type: 'string', description: 'Имя автора (snapshot)' },
+          canEdit: {
+            type: 'boolean',
+            description: 'true — текущий пользователь владелец и может PATCH',
+          },
         },
       },
     },

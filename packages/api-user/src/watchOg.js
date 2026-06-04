@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { isVideoReady, createLogger } = require('db');
+const { isVideoReady, createLogger, normalizeVisibility, VIDEO_VISIBILITY } = require('db');
 
 const log = createLogger('og');
 const { resolvePublicSiteUrlFromEnv } = require('./publicSiteUrl');
@@ -23,7 +23,7 @@ function resolvePublicSiteUrl(req) {
   return `${proto}://${host}`;
 }
 
-function buildOgMetaTags({ title, pageUrl, imageUrl }) {
+function buildOgMetaTags({ title, pageUrl, imageUrl, description }) {
   const lines = [
     '<meta property="og:type" content="video.other" />',
     `<meta property="og:title" content="${escapeHtml(title)}" />`,
@@ -31,11 +31,26 @@ function buildOgMetaTags({ title, pageUrl, imageUrl }) {
     '<meta name="twitter:card" content="summary_large_image" />',
     `<meta name="twitter:title" content="${escapeHtml(title)}" />`,
   ];
+  if (description) {
+    lines.push(`<meta property="og:description" content="${escapeHtml(description)}" />`);
+  }
   if (imageUrl) {
     lines.push(`<meta property="og:image" content="${escapeHtml(imageUrl)}" />`);
     lines.push(`<meta name="twitter:image" content="${escapeHtml(imageUrl)}" />`);
   }
   return lines.join('\n    ');
+}
+
+function buildHiddenOgMetaTags({ pageUrl }) {
+  const title = 'Видео скрыто на mvidia';
+  return [
+    '<meta property="og:type" content="website" />',
+    `<meta property="og:title" content="${escapeHtml(title)}" />`,
+    `<meta property="og:description" content="${escapeHtml(title)}" />`,
+    `<meta property="og:url" content="${escapeHtml(pageUrl)}" />`,
+    '<meta name="twitter:card" content="summary" />',
+    `<meta name="twitter:title" content="${escapeHtml(title)}" />`,
+  ].join('\n    ');
 }
 
 function injectOgIntoIndexHtml(indexHtml, { documentTitle, ogMeta }) {
@@ -67,27 +82,52 @@ function mountWatchOg(app, { Video, uploadDirAbs, indexHtmlPath, posterExists })
       return next(e);
     }
 
-    if (!doc || !isVideoReady(doc)) {
+    const siteBase = resolvePublicSiteUrl(req);
+    const pageUrl = `${siteBase}/v/${publicId}`;
+
+    if (!doc) {
+      res.status(404).type('text/plain; charset=utf-8').send('Видео не найдено');
+      return undefined;
+    }
+
+    if (normalizeVisibility(doc.visibility) === VIDEO_VISIBILITY.PRIVATE) {
+      const ogMeta = buildHiddenOgMetaTags({ pageUrl });
+      const html = injectOgIntoIndexHtml(indexTemplate, {
+        documentTitle: 'Видео скрыто — mvidia',
+        ogMeta,
+      });
+      log.debug('og: скрытое видео', { publicId });
+      res.status(200).type('text/html; charset=utf-8');
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Length', Buffer.byteLength(html, 'utf8'));
+        return res.end();
+      }
+      return res.send(html);
+    }
+
+    if (!isVideoReady(doc)) {
       log.debug('og: страница недоступна', {
         publicId,
         status: doc?.status,
-        found: !!doc,
       });
       res.status(404).type('text/plain; charset=utf-8').send('Видео не найдено');
       return undefined;
     }
 
-    const siteBase = resolvePublicSiteUrl(req);
-    const pageUrl = `${siteBase}/v/${publicId}`;
     let imageUrl = '';
     if (siteBase && (await posterExists(uploadDirAbs, doc.storageFileName))) {
       imageUrl = `${siteBase}/videos/${encodeURIComponent(publicId)}/poster`;
     }
 
+    const desc =
+      doc.description && String(doc.description).trim()
+        ? String(doc.description).trim().slice(0, 300)
+        : '';
     const ogMeta = buildOgMetaTags({
       title: doc.title,
       pageUrl,
       imageUrl: imageUrl || undefined,
+      description: desc || undefined,
     });
     const html = injectOgIntoIndexHtml(indexTemplate, {
       documentTitle: `${doc.title} — mvidia`,

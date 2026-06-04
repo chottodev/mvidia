@@ -147,6 +147,10 @@ module.exports = {
                             type: 'string',
                             description: 'Имя автора (snapshot), пусто для гостевых',
                           },
+                          visibility: {
+                            type: 'string',
+                            enum: ['public', 'private'],
+                          },
                         },
                       },
                     },

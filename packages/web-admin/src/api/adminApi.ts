@@ -48,6 +48,7 @@ export type VideoRow = {
   mimeType?: string;
   createdAt: string;
   authorName?: string;
+  visibility?: 'public' | 'private';
 };
 
 export async function getConfig(a: AdminAuth) {

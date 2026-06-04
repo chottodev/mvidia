@@ -7,10 +7,18 @@ const { customAlphabet } = require('nanoid');
 const {
   VIDEO_STATUS,
   PROCESSING_STEP,
+  VIDEO_VISIBILITY,
   videoPaths,
-  serializeVideo,
   isVideoReady,
+  normalizeVisibility,
 } = require('db');
+const {
+  validateTitle,
+  validateDescription,
+  parseDescription,
+  parseVisibility,
+} = require('./videoFields');
+const videoHandlers = require('./videoHandlers');
 const { enqueueTranscode } = require('./queue');
 const { createLogger } = require('db');
 
@@ -80,18 +88,38 @@ async function createVideo(req, res, next) {
   const { Video, uploadDirAbs } = this.dependencies;
 
   const fileField = (req.files || []).find((f) => f.fieldname === 'file');
-  const title = (req.body && String(req.body.title || '').trim()) || '';
+  const rawTitle = req.body && req.body.title;
   const uploadMeta = req.mvidiaUpload;
 
   if (!fileField) {
     log.warn('загрузка: отклонена — нет file');
     return res.status(400).json({ message: 'Поле file обязательно' });
   }
-  if (!title) {
+
+  const titleErr = validateTitle(rawTitle);
+  if (titleErr) {
     await fs.unlink(fileField.path).catch(() => {});
-    log.warn('загрузка: отклонена — нет названия');
-    return res.status(400).json({ message: 'Название обязательно' });
+    log.warn('загрузка: отклонена — название', { message: titleErr });
+    return res.status(400).json({ message: titleErr });
   }
+  const title = String(rawTitle).trim();
+
+  const descErr = validateDescription(req.body && req.body.description);
+  if (descErr) {
+    await fs.unlink(fileField.path).catch(() => {});
+    return res.status(400).json({ message: descErr });
+  }
+  const description = parseDescription(req.body && req.body.description);
+
+  const authorUser = req.mvidiaUser || null;
+  const vis = parseVisibility(req.body && req.body.visibility, {
+    allowPrivate: !!authorUser,
+  });
+  if (vis.err && vis.value === null) {
+    await fs.unlink(fileField.path).catch(() => {});
+    return res.status(400).json({ message: vis.err });
+  }
+  const visibility = vis.value;
   if (!isAllowedUpload(fileField)) {
     await fs.unlink(fileField.path).catch(() => {});
     log.warn('загрузка: неподдерживаемый формат', {
@@ -122,7 +150,6 @@ async function createVideo(req, res, next) {
     title,
   });
 
-  const authorUser = req.mvidiaUser || null;
   const authorFields = authorUser
     ? {
         authorUserId: authorUser._id,
@@ -140,6 +167,8 @@ async function createVideo(req, res, next) {
         sourceMimeType: fileField.mimetype || 'application/octet-stream',
         sourceSizeBytes: fileField.size,
         title,
+        description,
+        visibility: normalizeVisibility(visibility),
         mimeType: 'video/mp4',
         sizeBytes: 0,
         status: VIDEO_STATUS.NOT_READY,
@@ -177,6 +206,8 @@ async function createVideo(req, res, next) {
       return res.status(201).json({
         publicId,
         title,
+        description,
+        visibility: normalizeVisibility(visibility),
         status: VIDEO_STATUS.NOT_READY,
         processingStep: PROCESSING_STEP.QUEUED,
         sourceSizeBytes: fileField.size,
@@ -194,41 +225,11 @@ async function createVideo(req, res, next) {
   return res.status(500).json({ message: 'Не удалось создать запись' });
 }
 
-async function getVideoByPublicId(req, res) {
-  const { Video } = this.dependencies;
-  const { publicId } = req.params;
-  const isPoll = req.get('x-mvidia-poll') === '1';
-  const doc = await Video.findOne({ publicId }).lean();
-  if (!doc) {
-    log.info('метаданные: не найдено', { publicId, poll: isPoll });
-    return res.status(404).json({ message: 'Видео не найдено' });
-  }
-  const payload = serializeVideo(doc);
-  if (!isPoll) {
-    log.info('метаданные: ответ', {
-      publicId,
-      status: payload.status,
-      processingStep: payload.processingStep,
-    });
-  } else {
-    log.debug('метаданные: poll', {
-      publicId,
-      status: payload.status,
-      processingStep: payload.processingStep,
-    });
-  }
-  return res.status(200).json(payload);
-}
-
 async function streamVideoFile(req, res, next) {
-  const { Video, uploadDirAbs } = this.dependencies;
+  const { uploadDirAbs } = this.dependencies;
   const { publicId } = req.params;
-  const doc = await Video.findOne({ publicId }).lean();
-  if (!doc || !isVideoReady(doc)) {
-    log.info('воспроизведение: недоступно', {
-      publicId,
-      status: doc?.status,
-    });
+  const { doc } = await videoHandlers.assertCanStream.call(this, req, res);
+  if (!doc) {
     return res.status(404).json({ message: 'Видео не найдено' });
   }
   const filePath = videoPaths.deliveryPath(uploadDirAbs, doc.storageFileName);
@@ -280,11 +281,11 @@ async function streamVideoFile(req, res, next) {
 }
 
 async function streamVideoPoster(req, res, next) {
-  const { Video, uploadDirAbs } = this.dependencies;
+  const { uploadDirAbs } = this.dependencies;
   const { publicId } = req.params;
-  const doc = await Video.findOne({ publicId }).lean();
-  if (!doc || !isVideoReady(doc)) {
-    log.debug('постер: недоступен', { publicId, status: doc?.status });
+  const { doc } = await videoHandlers.assertCanStream.call(this, req, res);
+  if (!doc) {
+    log.debug('постер: недоступен', { publicId });
     return res.status(404).json({ message: 'Постер не найден' });
   }
   const filePath = videoPaths.posterPath(uploadDirAbs, doc.storageFileName);
@@ -316,7 +317,8 @@ module.exports = {
   createMultipartMiddleware,
   operations: {
     createVideo,
-    getVideoByPublicId,
+    getVideoByPublicId: videoHandlers.getVideoByPublicId,
+    patchVideo: videoHandlers.patchVideo,
     streamVideoFile,
     streamVideoPoster,
     register: authHandlers.register,

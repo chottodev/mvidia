@@ -31,6 +31,10 @@ function statusLabel(status: string) {
   return 'обработка';
 }
 
+function visibilityLabel(v: string | undefined) {
+  return v === 'private' ? 'скрыто' : 'всем';
+}
+
 function formatSize(row: VideoRow) {
   const bytes = row.status === 'ready' ? row.sizeBytes : row.sourceSizeBytes;
   if (bytes == null) return '—';
@@ -107,8 +111,9 @@ defineExpose({ refresh });
         <tr>
           <th>Название</th>
           <th>publicId</th>
-          <th>Автор</th>
-          <th>Статус</th>
+              <th>Автор</th>
+              <th>Видимость</th>
+              <th>Статус</th>
           <th>Размер</th>
           <th>Создано</th>
           <th>Ссылка</th>
@@ -119,8 +124,9 @@ defineExpose({ refresh });
         <tr v-for="row in items" :key="row.publicId">
           <td>{{ row.title }}</td>
           <td class="mono">{{ row.publicId }}</td>
-          <td>{{ row.authorName || '—' }}</td>
-          <td>{{ statusLabel(row.status) }}</td>
+              <td>{{ row.authorName || '—' }}</td>
+              <td>{{ visibilityLabel(row.visibility) }}</td>
+              <td>{{ statusLabel(row.status) }}</td>
           <td>{{ formatSize(row) }}</td>
           <td>{{ new Date(row.createdAt).toLocaleString('ru-RU') }}</td>
           <td>

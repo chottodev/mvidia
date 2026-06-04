@@ -1,7 +1,15 @@
 const mongoose = require('mongoose');
 const Video = require('./Video');
 const User = require('./User');
-const { VIDEO_STATUS, PROCESSING_STEP, ALLOWED_UPLOAD_EXTENSIONS } = require('./videoConstants');
+const {
+  VIDEO_STATUS,
+  PROCESSING_STEP,
+  VIDEO_VISIBILITY,
+  VIDEO_TITLE_MAX,
+  VIDEO_DESCRIPTION_MAX,
+  ALLOWED_UPLOAD_EXTENSIONS,
+} = require('./videoConstants');
+const { canViewFullVideo, normalizeVisibility, serializeVideoHidden } = require('./videoAccess');
 const videoPaths = require('./videoPaths');
 const { serializeVideo, isVideoReady } = require('./serializeVideo');
 const { serializeUser } = require('./serializeUser');
@@ -21,6 +29,15 @@ async function migrateVideosWithoutStatus() {
     { $set: { status: VIDEO_STATUS.READY } }
   );
 
+  await Video.updateMany(
+    { visibility: { $exists: false } },
+    { $set: { visibility: VIDEO_VISIBILITY.PUBLIC, description: '' } }
+  );
+  await Video.updateMany(
+    { description: { $exists: false } },
+    { $set: { description: '' } }
+  );
+
   const legacy = await Video.find({ sourceFileName: { $exists: false } });
   for (const doc of legacy) {
     doc.sourceFileName = doc.storageFileName;
@@ -38,11 +55,17 @@ module.exports = {
   User,
   VIDEO_STATUS,
   PROCESSING_STEP,
+  VIDEO_VISIBILITY,
+  VIDEO_TITLE_MAX,
+  VIDEO_DESCRIPTION_MAX,
   ALLOWED_UPLOAD_EXTENSIONS,
   videoPaths,
   serializeVideo,
   serializeUser,
   isVideoReady,
+  canViewFullVideo,
+  normalizeVisibility,
+  serializeVideoHidden,
   createLogger,
   refreshLogLevel,
 };

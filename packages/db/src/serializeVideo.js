@@ -1,11 +1,15 @@
 const { VIDEO_STATUS } = require('./videoConstants');
+const { normalizeVisibility } = require('./videoAccess');
 
 /** @param {import('mongoose').LeanDocument<any>} doc */
 function serializeVideo(doc) {
   const status = doc.status || VIDEO_STATUS.READY;
+  const visibility = normalizeVisibility(doc.visibility);
   const base = {
     publicId: doc.publicId,
     title: doc.title,
+    description: doc.description || '',
+    visibility,
     status,
     createdAt: doc.createdAt,
   };

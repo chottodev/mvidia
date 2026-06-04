@@ -1,47 +1,28 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import {
   adminApiBase,
   clearAuth,
-  deleteVideo,
   getConfig,
-  loadAuth,
   listVideos,
+  loadAuth,
   saveAuth,
   type AdminAuth,
 } from './api/adminApi';
+import VideosPanel from './components/VideosPanel.vue';
+import UsersPanel from './components/UsersPanel.vue';
+
+type Tab = 'videos' | 'users';
 
 const auth = ref<AdminAuth | null>(null);
 const loginUser = ref('');
 const loginPass = ref('');
 const err = ref('');
 const busy = ref(false);
-
-const offset = ref(0);
-const limit = ref(20);
-const total = ref(0);
-const items = ref<import('./api/adminApi').VideoRow[]>([]);
+const tab = ref<Tab>('videos');
 
 const publicSiteUrl = ref<string | null>(null);
 const userApiDocsUrl = ref<string | null>(null);
-
-function watchUrl(publicId: string) {
-  const base = publicSiteUrl.value?.replace(/\/$/, '');
-  if (!base) return `/v/${publicId}`;
-  return `${base}/v/${publicId}`;
-}
-
-function statusLabel(status: string) {
-  if (status === 'ready') return 'готово';
-  if (status === 'failed') return 'ошибка';
-  return 'обработка';
-}
-
-function formatSize(row: import('./api/adminApi').VideoRow) {
-  const bytes = row.status === 'ready' ? row.sizeBytes : row.sourceSizeBytes;
-  if (bytes == null) return '—';
-  return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`;
-}
 
 async function loadPublicSiteUrl() {
   if (!auth.value) {
@@ -63,7 +44,6 @@ onMounted(() => {
   auth.value = loadAuth();
   if (auth.value) {
     void loadPublicSiteUrl();
-    void refresh();
   }
 });
 
@@ -75,9 +55,7 @@ async function login() {
     await listVideos(a, 0, 1);
     saveAuth(a);
     auth.value = a;
-    offset.value = 0;
     await loadPublicSiteUrl();
-    await refresh();
   } catch (e) {
     err.value = e instanceof Error ? e.message : 'Ошибка входа';
   } finally {
@@ -90,50 +68,6 @@ function logout() {
   auth.value = null;
   publicSiteUrl.value = null;
   userApiDocsUrl.value = null;
-  items.value = [];
-  total.value = 0;
-}
-
-async function refresh() {
-  if (!auth.value) return;
-  err.value = '';
-  busy.value = true;
-  try {
-    const r = await listVideos(auth.value, offset.value, limit.value);
-    total.value = r.total;
-    items.value = r.items;
-  } catch (e) {
-    err.value = e instanceof Error ? e.message : 'Ошибка загрузки';
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function remove(publicId: string) {
-  if (!auth.value) return;
-  if (!confirm(`Удалить «${publicId}»?`)) return;
-  busy.value = true;
-  err.value = '';
-  try {
-    await deleteVideo(auth.value, publicId);
-    await refresh();
-  } catch (e) {
-    err.value = e instanceof Error ? e.message : 'Ошибка удаления';
-  } finally {
-    busy.value = false;
-  }
-}
-
-function prevPage() {
-  offset.value = Math.max(0, offset.value - limit.value);
-  void refresh();
-}
-
-function nextPage() {
-  if (offset.value + limit.value < total.value) {
-    offset.value += limit.value;
-    void refresh();
-  }
 }
 </script>
 
@@ -142,6 +76,10 @@ function nextPage() {
     <header class="header">
       <strong>mvidia — админка</strong>
       <span class="meta">Admin API: {{ adminApiBase() }}</span>
+      <nav v-if="auth" class="tabs">
+        <button type="button" :class="{ active: tab === 'videos' }" @click="tab = 'videos'">Видео</button>
+        <button type="button" :class="{ active: tab === 'users' }" @click="tab = 'users'">Пользователи</button>
+      </nav>
       <a
         v-if="userApiDocsUrl"
         class="header-link"
@@ -165,58 +103,12 @@ function nextPage() {
       </section>
 
       <section v-else class="card">
-        <div class="toolbar">
-          <h1>Видео</h1>
-          <button type="button" :disabled="busy" @click="refresh">Обновить</button>
-        </div>
-        <p v-if="err" class="err">{{ err }}</p>
-        <p v-if="!publicSiteUrl" class="err">
-          В .env не задан USER_PUBLIC_SITE_URL — укажите публичный URL user-сайта для ссылок «открыть».
-        </p>
-        <p v-else class="muted">Публичный сайт: {{ publicSiteUrl }}</p>
-        <p class="muted">Всего: {{ total }}. Страница offset={{ offset }}, limit={{ limit }}.</p>
-
-        <div class="pager">
-          <button type="button" :disabled="busy || offset === 0" @click="prevPage">Назад</button>
-          <button type="button" :disabled="busy || offset + limit >= total" @click="nextPage">Вперёд</button>
-        </div>
-
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Название</th>
-              <th>publicId</th>
-              <th>Автор</th>
-              <th>Статус</th>
-              <th>Размер</th>
-              <th>Создано</th>
-              <th>Ссылка</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in items" :key="row.publicId">
-              <td>{{ row.title }}</td>
-              <td class="mono">{{ row.publicId }}</td>
-              <td>{{ row.authorName || '—' }}</td>
-              <td>{{ statusLabel(row.status) }}</td>
-              <td>{{ formatSize(row) }}</td>
-              <td>{{ new Date(row.createdAt).toLocaleString('ru-RU') }}</td>
-              <td>
-                <a
-                  v-if="row.status === 'ready'"
-                  :href="watchUrl(row.publicId)"
-                  target="_blank"
-                  rel="noreferrer"
-                >открыть</a>
-                <span v-else class="muted">—</span>
-              </td>
-              <td>
-                <button type="button" class="danger" :disabled="busy" @click="remove(row.publicId)">Удалить</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <VideosPanel
+          v-if="tab === 'videos'"
+          :auth="auth"
+          :public-site-url="publicSiteUrl"
+        />
+        <UsersPanel v-else :auth="auth" />
       </section>
     </main>
   </div>
@@ -240,6 +132,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
   padding: 0.75rem 1.25rem;
   background: #0f172a;
   color: #f8fafc;
@@ -247,6 +140,24 @@ body {
 .meta {
   opacity: 0.85;
   font-size: 0.85rem;
+}
+.tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+.tabs button {
+  background: transparent;
+  color: #93c5fd;
+  border: 1px solid #475569;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.tabs button.active {
+  background: #1e293b;
+  color: #fff;
+  border-color: #64748b;
 }
 .header-link {
   color: #93c5fd;
@@ -268,7 +179,7 @@ body {
 .main {
   flex: 1;
   padding: 1.5rem;
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;

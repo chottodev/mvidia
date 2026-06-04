@@ -77,3 +77,68 @@ export async function deleteVideo(a: AdminAuth, publicId: string) {
   if (res.status === 404) return;
   if (!res.ok) throw new Error(`Ошибка ${res.status}`);
 }
+
+export type UserRow = {
+  id: string;
+  phone: string;
+  name: string;
+  createdAt: string;
+};
+
+export type UserDetail = UserRow & { videoCount: number };
+
+export type UserPatch = {
+  name?: string;
+  phone?: string;
+  password?: string;
+};
+
+async function parseApiError(res: Response): Promise<string> {
+  let msg = `Ошибка ${res.status}`;
+  try {
+    const j = await res.json();
+    if (j.message) msg = j.message;
+  } catch {
+    /* ignore */
+  }
+  return msg;
+}
+
+export async function listUsers(a: AdminAuth, offset: number, limit: number) {
+  const q = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  const res = await fetch(`${adminApiBase()}/users?${q}`, { headers: authHeader(a) });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<{ total: number; items: UserRow[] }>;
+}
+
+export async function getUser(a: AdminAuth, id: string) {
+  const res = await fetch(`${adminApiBase()}/users/${encodeURIComponent(id)}`, {
+    headers: authHeader(a),
+  });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (res.status === 404) throw new Error('Пользователь не найден');
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<UserDetail>;
+}
+
+export async function updateUser(a: AdminAuth, id: string, patch: UserPatch) {
+  const res = await fetch(`${adminApiBase()}/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...authHeader(a), 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<UserRow>;
+}
+
+export async function deleteUser(a: AdminAuth, id: string) {
+  const res = await fetch(`${adminApiBase()}/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeader(a),
+  });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (res.status === 404) return;
+  if (!res.ok) throw new Error(await parseApiError(res));
+}

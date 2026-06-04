@@ -78,7 +78,7 @@ async function savePassword() {
 
     <section class="card">
       <h2>Смена пароля</h2>
-      <p class="hint">Новый пароль: 6 символов (a–z, A–Z, цифры), строчная, заглавная и цифра.</p>
+      <p class="hint">Новый пароль: 6 символов (латиница и цифры), минимум одна строчная, одна заглавная и одна цифра.</p>
       <label class="field">
         <span>Текущий пароль</span>
         <input v-model="currentPassword" type="password" autocomplete="current-password" />

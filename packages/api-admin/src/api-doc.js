@@ -13,6 +13,56 @@ module.exports = {
         scheme: 'basic',
       },
     },
+    schemas: {
+      Message: {
+        type: 'object',
+        properties: { message: { type: 'string' } },
+      },
+      User: {
+        type: 'object',
+        required: ['id', 'phone', 'name', 'createdAt'],
+        properties: {
+          id: { type: 'string' },
+          phone: { type: 'string' },
+          name: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      UserDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/User' },
+          {
+            type: 'object',
+            required: ['videoCount'],
+            properties: {
+              videoCount: { type: 'integer', minimum: 0 },
+            },
+          },
+        ],
+      },
+      UserList: {
+        type: 'object',
+        required: ['total', 'items'],
+        properties: {
+          total: { type: 'integer' },
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/User' },
+          },
+        },
+      },
+      UserPatch: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          phone: { type: 'string' },
+          password: {
+            type: 'string',
+            description: 'Новый пароль (6 символов); пустая строка — не менять',
+          },
+        },
+      },
+    },
   },
   security: [{ basicAuth: [] }],
   paths: {
@@ -130,6 +180,146 @@ module.exports = {
                   type: 'object',
                   properties: { message: { type: 'string' } },
                 },
+              },
+            },
+          },
+        },
+        'x-express-openapi-disable-response-validation-middleware': true,
+      },
+    },
+    '/users': {
+      get: {
+        operationId: 'listUsers',
+        summary: 'Список пользователей',
+        parameters: [
+          {
+            name: 'offset',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 0, default: 0 },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'OK',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/UserList' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/users/{id}': {
+      get: {
+        operationId: 'getUserById',
+        summary: 'Пользователь по id',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'OK',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/UserDetail' },
+              },
+            },
+          },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+        },
+      },
+      patch: {
+        operationId: 'patchUser',
+        summary: 'Изменить пользователя',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UserPatch' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'OK',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/User' },
+              },
+            },
+          },
+          '400': {
+            description: 'Ошибка валидации',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+          '409': {
+            description: 'Номер занят',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
+              },
+            },
+          },
+        },
+      },
+      delete: {
+        operationId: 'deleteUser',
+        summary: 'Удалить пользователя',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1 },
+          },
+        ],
+        responses: {
+          '204': { description: 'Удалено' },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
               },
             },
           },

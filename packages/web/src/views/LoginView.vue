@@ -28,7 +28,7 @@ async function submit() {
 
 <template>
   <h1>Вход</h1>
-  <p class="hint">Телефон России (+7), пароль из 6 символов (a–z, A–Z, цифры).</p>
+  <p class="hint">Телефон России (+7). Пароль: 6 символов (латиница и цифры), минимум одна строчная, заглавная и цифра.</p>
   <form class="form" @submit.prevent="submit">
     <label class="field">
       <span>Телефон</span>

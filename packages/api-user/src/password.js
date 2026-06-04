@@ -6,7 +6,7 @@ const BCRYPT_ROUNDS = 10;
 function validatePassword(password) {
   const p = String(password || '');
   if (!PASSWORD_RE.test(p)) {
-    return 'Пароль: ровно 6 символов (латиница a-z, A-Z и цифры)';
+    return 'Пароль: 6 символов (латиница и цифры), минимум одна строчная, одна заглавная и одна цифра';
   }
   return null;
 }

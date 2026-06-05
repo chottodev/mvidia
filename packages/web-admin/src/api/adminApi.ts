@@ -143,3 +143,36 @@ export async function deleteUser(a: AdminAuth, id: string) {
   if (res.status === 404) return;
   if (!res.ok) throw new Error(await parseApiError(res));
 }
+
+export type ConversionLogStatus = 'running' | 'completed' | 'failed' | 'skipped';
+
+export type ConversionLogRow = {
+  id: string;
+  publicId: string;
+  jobId: string | null;
+  attempt: number;
+  status: ConversionLogStatus;
+  sourceSizeBytes: number | null;
+  videoDurationSec: number | null;
+  workDurationMs: number | null;
+  strategy: string | null;
+  usedCopy: boolean | null;
+  deliverySizeBytes: number | null;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+export async function listConversionLogs(
+  a: AdminAuth,
+  offset: number,
+  limit: number,
+  publicId?: string
+) {
+  const q = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (publicId?.trim()) q.set('publicId', publicId.trim());
+  const res = await fetch(`${adminApiBase()}/conversion-logs?${q}`, { headers: authHeader(a) });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<{ total: number; items: ConversionLogRow[] }>;
+}

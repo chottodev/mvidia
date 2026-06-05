@@ -11,8 +11,9 @@ import {
 } from './api/adminApi';
 import VideosPanel from './components/VideosPanel.vue';
 import UsersPanel from './components/UsersPanel.vue';
+import ConversionLogsPanel from './components/ConversionLogsPanel.vue';
 
-type Tab = 'videos' | 'users';
+type Tab = 'videos' | 'users' | 'conversions';
 
 const auth = ref<AdminAuth | null>(null);
 const loginUser = ref('');
@@ -79,6 +80,7 @@ function logout() {
       <nav v-if="auth" class="tabs">
         <button type="button" :class="{ active: tab === 'videos' }" @click="tab = 'videos'">Видео</button>
         <button type="button" :class="{ active: tab === 'users' }" @click="tab = 'users'">Пользователи</button>
+        <button type="button" :class="{ active: tab === 'conversions' }" @click="tab = 'conversions'">Конвертация</button>
       </nav>
       <a
         v-if="userApiDocsUrl"
@@ -108,6 +110,7 @@ function logout() {
           :auth="auth"
           :public-site-url="publicSiteUrl"
         />
+        <ConversionLogsPanel v-else-if="tab === 'conversions'" :auth="auth" />
         <UsersPanel v-else :auth="auth" />
       </section>
     </main>
@@ -179,7 +182,7 @@ body {
 .main {
   flex: 1;
   padding: 1.5rem;
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;

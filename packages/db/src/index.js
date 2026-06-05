@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 const Video = require('./Video');
 const User = require('./User');
+const ConversionLog = require('./ConversionLog');
+const { CONVERSION_LOG_STATUS } = require('./conversionLogConstants');
+const { serializeConversionLog } = require('./serializeConversionLog');
 const {
   VIDEO_STATUS,
   PROCESSING_STEP,
@@ -53,6 +56,9 @@ module.exports = {
   migrateVideosWithoutStatus,
   Video,
   User,
+  ConversionLog,
+  CONVERSION_LOG_STATUS,
+  serializeConversionLog,
   VIDEO_STATUS,
   PROCESSING_STEP,
   VIDEO_VISIBILITY,

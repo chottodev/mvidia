@@ -60,7 +60,10 @@ async function main() {
         attempt: job.attemptsMade + 1,
       });
 
-      return processTranscodeJob(publicId, uploadDirAbs);
+      return processTranscodeJob(publicId, uploadDirAbs, {
+        jobId: job.id != null ? String(job.id) : null,
+        attempt: job.attemptsMade + 1,
+      });
     },
     {
       connection: redisConnection(),

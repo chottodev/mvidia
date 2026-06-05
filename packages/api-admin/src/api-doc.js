@@ -51,6 +51,40 @@ module.exports = {
           },
         },
       },
+      ConversionLog: {
+        type: 'object',
+        required: ['id', 'publicId', 'attempt', 'status', 'startedAt'],
+        properties: {
+          id: { type: 'string' },
+          publicId: { type: 'string' },
+          jobId: { type: 'string', nullable: true },
+          attempt: { type: 'integer', minimum: 1 },
+          status: {
+            type: 'string',
+            enum: ['running', 'completed', 'failed', 'skipped'],
+          },
+          sourceSizeBytes: { type: 'integer', nullable: true },
+          videoDurationSec: { type: 'number', nullable: true },
+          workDurationMs: { type: 'integer', nullable: true },
+          strategy: { type: 'string', nullable: true },
+          usedCopy: { type: 'boolean', nullable: true },
+          deliverySizeBytes: { type: 'integer', nullable: true },
+          errorMessage: { type: 'string', nullable: true },
+          startedAt: { type: 'string', format: 'date-time' },
+          finishedAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      ConversionLogList: {
+        type: 'object',
+        required: ['total', 'items'],
+        properties: {
+          total: { type: 'integer' },
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/ConversionLog' },
+          },
+        },
+      },
       UserPatch: {
         type: 'object',
         properties: {
@@ -329,6 +363,43 @@ module.exports = {
           },
         },
         'x-express-openapi-disable-response-validation-middleware': true,
+      },
+    },
+    '/conversion-logs': {
+      get: {
+        operationId: 'listConversionLogs',
+        summary: 'Журнал конвертации (воркер)',
+        parameters: [
+          {
+            name: 'offset',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 0, default: 0 },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          {
+            name: 'publicId',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Фильтр по publicId видео',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'OK',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ConversionLogList' },
+              },
+            },
+          },
+        },
       },
     },
   },

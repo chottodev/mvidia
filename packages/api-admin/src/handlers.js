@@ -3,6 +3,7 @@ const fs = require('fs/promises');
 const { serializeVideo, videoPaths } = require('db');
 const { resolvePublicSiteUrlFromEnv } = require('../../api-user/src/publicSiteUrl');
 const userHandlers = require('./userHandlers');
+const conversionLogHandlers = require('./conversionLogHandlers');
 
 async function getConfig(req, res) {
   const publicSiteUrl = resolvePublicSiteUrlFromEnv();
@@ -57,5 +58,6 @@ module.exports = {
     getUserById: userHandlers.getUserById,
     patchUser: userHandlers.patchUser,
     deleteUser: userHandlers.deleteUser,
+    listConversionLogs: conversionLogHandlers.listConversionLogs,
   },
 };

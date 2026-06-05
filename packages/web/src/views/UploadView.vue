@@ -64,6 +64,10 @@ async function submit() {
       <input v-model="title" type="text" maxlength="75" required placeholder="Например, демо" />
     </label>
     <label class="field">
+      <span>Файл</span>
+      <input type="file" :accept="ACCEPT" @change="onFile" />
+    </label>
+    <label class="field">
       <span>Описание (необязательно)</span>
       <textarea v-model="description" maxlength="300" rows="3" placeholder="Кратко о ролике" />
     </label>
@@ -73,10 +77,6 @@ async function submit() {
         <option value="public">Всем по ссылке</option>
         <option value="private">Скрыто (только вы)</option>
       </select>
-    </label>
-    <label class="field">
-      <span>Файл</span>
-      <input type="file" :accept="ACCEPT" @change="onFile" />
     </label>
     <button type="submit" :disabled="busy">{{ busy ? 'Загрузка…' : 'Отправить' }}</button>
   </form>

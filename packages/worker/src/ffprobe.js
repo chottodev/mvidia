@@ -10,7 +10,7 @@ async function probeMedia(filePath) {
       '-v',
       'error',
       '-show_entries',
-      'format=format_name:stream=codec_name,codec_type',
+      'format=format_name,duration,size:stream=codec_name,codec_type,width,height,r_frame_rate,avg_frame_rate',
       '-of',
       'json',
       filePath,
@@ -20,15 +20,43 @@ async function probeMedia(filePath) {
   return JSON.parse(stdout);
 }
 
-function canRemuxToMp4(probe) {
+function hasAudioStream(probe) {
+  return (probe.streams || []).some((s) => s.codec_type === 'audio');
+}
+
+function probeSummary(probe) {
   const streams = probe.streams || [];
   const video = streams.find((s) => s.codec_type === 'video');
   const audio = streams.find((s) => s.codec_type === 'audio');
-  if (!video || video.codec_name !== 'h264') return false;
-  const format = (probe.format && probe.format.format_name) || '';
-  if (!format.includes('mp4') && !format.includes('mov')) return false;
-  if (!audio) return true;
-  return audio.codec_name === 'aac';
+  const durationSec = parseFloat(probe.format?.duration || '0') || 0;
+  const sizeBytes = parseInt(probe.format?.size || '0', 10) || 0;
+  return {
+    format: probe.format?.format_name || '',
+    durationSec,
+    sizeBytes,
+    videoCodec: video?.codec_name || null,
+    audioCodec: audio?.codec_name || null,
+    width: video?.width || null,
+    height: video?.height || null,
+    hasAudio: !!audio,
+  };
 }
 
-module.exports = { probeMedia, canRemuxToMp4 };
+/** h264 → mp4 без перекодирования видео (контейнер webm/mkv/mp4). */
+function remuxStrategy(probe) {
+  const summary = probeSummary(probe);
+  if (summary.videoCodec !== 'h264') return 'transcode';
+  if (!summary.hasAudio) return 'remux_copy';
+  if (summary.audioCodec === 'aac') return 'remux_copy';
+  if (summary.audioCodec === 'opus' || summary.audioCodec === 'vorbis') {
+    return 'remux_video_copy';
+  }
+  return 'transcode';
+}
+
+/** @deprecated use remuxStrategy */
+function canRemuxToMp4(probe) {
+  return remuxStrategy(probe) === 'remux_copy';
+}
+
+module.exports = { probeMedia, canRemuxToMp4, remuxStrategy, hasAudioStream, probeSummary };

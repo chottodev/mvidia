@@ -3,7 +3,7 @@ const fs = require('fs/promises');
 const express = require('express');
 const cors = require('cors');
 const openapi = require('express-openapi');
-const { connect, migrateVideosWithoutStatus, User, Video } = require('db');
+const { connect, migrateVideosWithoutStatus, User, Video, ConversionLog } = require('db');
 const handlersModule = require('./handlers');
 const { mountSpa, resolveServeUi, resolveUiDist } = require('./serveUi');
 
@@ -80,7 +80,7 @@ async function main() {
     apiDoc: require('./api-doc'),
     promiseMode: true,
     operations: handlersModule.operations,
-    dependencies: { User, Video, uploadDirAbs },
+    dependencies: { User, Video, ConversionLog, uploadDirAbs },
     securityHandlers: {
       basicAuth: basicAuthSecurityHandler,
     },

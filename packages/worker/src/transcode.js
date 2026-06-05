@@ -2,9 +2,17 @@ const path = require('path');
 const fs = require('fs/promises');
 const { spawn } = require('child_process');
 const { probeMedia, remuxStrategy, hasAudioStream, probeSummary } = require('./ffprobe');
+const {
+  resolveConversionProfile,
+  estimateConversionForProfile,
+  videoFilterArgs,
+  inputOptionsForProfile,
+} = require('./conversionProfiles');
+const { isTranscodeCancelled } = require('./transcodeCancel');
 const { createLogger } = require('db');
 
 const log = createLogger('transcode');
+const CANCEL_MESSAGE = 'Отменено администратором';
 
 function ffmpegTimeoutMs() {
   const raw = process.env.WORKER_FFMPEG_TIMEOUT_MS;
@@ -22,28 +30,12 @@ function ffmpegStallMs() {
   return ms;
 }
 
-function ffmpegPreset() {
-  return process.env.WORKER_FFMPEG_PRESET || 'medium';
-}
-
-function ffmpegCrf() {
-  return process.env.WORKER_FFMPEG_CRF || '23';
-}
-
-function isWebmSource(sourcePath, summary) {
-  return (
-    /\.webm$/i.test(sourcePath) ||
-    (summary.format && summary.format.toLowerCase().includes('webm'))
-  );
-}
-
-function inputOptions(sourcePath, summary) {
-  const opts = [];
-  if (isWebmSource(sourcePath, summary)) {
-    // Битые/недописанные WebM от MediaRecorder: не зависать на мусорных таймстемпах.
-    opts.push('-fflags', '+genpts+discardcorrupt', '-err_detect', 'ignore_err');
-  }
-  return opts;
+function ffmpegHeartbeatMs() {
+  const raw = process.env.WORKER_FFMPEG_HEARTBEAT_MS;
+  if (raw === undefined || raw === '') return 60000;
+  const ms = parseInt(raw, 10);
+  if (Number.isNaN(ms) || ms <= 0) return 0;
+  return ms;
 }
 
 function durationLimitArgs(summary) {
@@ -56,6 +48,7 @@ function durationLimitArgs(summary) {
 function runFfmpeg(args, context) {
   const timeoutMs = ffmpegTimeoutMs();
   const stallMs = ffmpegStallMs();
+  const heartbeatMs = ffmpegHeartbeatMs();
 
   return new Promise((resolve, reject) => {
     const procArgs = ['-hide_banner', '-nostats', '-progress', 'pipe:1', ...args];
@@ -68,14 +61,50 @@ function runFfmpeg(args, context) {
     let settled = false;
     let timeoutTimer;
     let stallTimer;
+    let heartbeatTimer;
+    let abortPending = false;
+    const checkAbort = () => {
+      if (!context.jobId || settled || abortPending) return;
+      abortPending = true;
+      isTranscodeCancelled(context.jobId)
+        .then((cancelled) => {
+          abortPending = false;
+          if (cancelled && !settled) {
+            proc.kill('SIGKILL');
+            finish(new Error(CANCEL_MESSAGE));
+          }
+        })
+        .catch(() => {
+          abortPending = false;
+        });
+    };
+
+    checkAbort();
+    const startedAt = Date.now();
 
     const finish = (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutTimer);
       clearInterval(stallTimer);
+      clearInterval(heartbeatTimer);
       if (err) reject(err);
       else resolve();
+    };
+
+    const heartbeatFields = () => {
+      const elapsedMs = Date.now() - startedAt;
+      const outTimeSec = lastOutTimeUs >= 0 ? lastOutTimeUs / 1_000_000 : null;
+      const fields = {
+        ...context,
+        elapsedMs,
+        outTimeSec,
+      };
+      const srcDur = context.sourceDurationSec;
+      if (srcDur > 0 && outTimeSec != null) {
+        fields.percent = Math.min(100, Math.round((outTimeSec / srcDur) * 100));
+      }
+      return fields;
     };
 
     const onProgressLine = (line) => {
@@ -149,18 +178,27 @@ function runFfmpeg(args, context) {
           finish(
             new Error(
               `ffmpeg завис (нет прогресса ${Math.round(idleMs / 60000)} мин). ` +
-                'Возможен битый WebM или VP9 на слабом CPU — проверьте исходник ffprobe-ом'
+                'Возможен битый WebM или VP9 на слабом CPU — проверьте исходник ffprobe-om'
             )
           );
+        } else {
+          checkAbort();
         }
       }, 30000);
+    }
+
+    if (heartbeatMs > 0) {
+      heartbeatTimer = setInterval(() => {
+        checkAbort();
+        log.info('ffmpeg: конвертация продолжается', heartbeatFields());
+      }, heartbeatMs);
     }
   });
 }
 
-function remuxCopyArgs(sourcePath, outputPath, summary) {
+function remuxCopyArgs(sourcePath, outputPath, summary, profile) {
   return [
-    ...inputOptions(sourcePath, summary),
+    ...inputOptionsForProfile(profile),
     '-i',
     sourcePath,
     ...durationLimitArgs(summary),
@@ -177,9 +215,10 @@ function remuxCopyArgs(sourcePath, outputPath, summary) {
   ];
 }
 
-function remuxVideoCopyArgs(sourcePath, outputPath, summary) {
+function remuxVideoCopyArgs(sourcePath, outputPath, summary, profile) {
+  const audioBitrate = profile.audioBitrate || '128k';
   const args = [
-    ...inputOptions(sourcePath, summary),
+    ...inputOptionsForProfile(profile),
     '-i',
     sourcePath,
     ...durationLimitArgs(summary),
@@ -189,7 +228,7 @@ function remuxVideoCopyArgs(sourcePath, outputPath, summary) {
     'copy',
   ];
   if (summary.hasAudio) {
-    args.push('-map', '0:a:0', '-c:a', 'aac', '-b:a', '128k');
+    args.push('-map', '0:a:0', '-c:a', 'aac', '-b:a', audioBitrate);
   } else {
     args.push('-an');
   }
@@ -197,10 +236,13 @@ function remuxVideoCopyArgs(sourcePath, outputPath, summary) {
   return args;
 }
 
-function transcodeToDeliveryArgs(sourcePath, outputPath, summary, probe) {
+function transcodeToDeliveryArgs(sourcePath, outputPath, summary, probe, profile) {
   const hasAudio = hasAudioStream(probe);
+  const audioBitrate = profile.audioBitrate || '128k';
   const args = [
-    ...inputOptions(sourcePath, summary),
+    '-threads',
+    '0',
+    ...inputOptionsForProfile(profile),
     '-i',
     sourcePath,
     ...durationLimitArgs(summary),
@@ -216,56 +258,74 @@ function transcodeToDeliveryArgs(sourcePath, outputPath, summary, probe) {
     '-c:v',
     'libx264',
     '-preset',
-    ffmpegPreset(),
+    profile.preset || 'faster',
     '-crf',
-    ffmpegCrf(),
+    profile.crf || '23',
     '-threads',
-    '0',
-    '-vf',
-    'scale=-2:1080',
-    '-pix_fmt',
-    'yuv420p'
+    '0'
   );
+  args.push(...videoFilterArgs(summary, profile));
+  args.push('-pix_fmt', 'yuv420p');
+  if (profile.tune) {
+    args.push('-tune', profile.tune);
+  }
   if (hasAudio) {
-    args.push('-c:a', 'aac', '-b:a', '128k');
+    args.push('-c:a', 'aac', '-b:a', audioBitrate);
   }
   args.push('-movflags', '+faststart', '-y', outputPath);
   return args;
 }
 
-async function remuxCopy(sourcePath, outputPath, summary) {
+function ffmpegContext(profile, extra) {
+  return {
+    profileId: profile.id,
+    profileLabel: profile.label,
+    ...extra,
+  };
+}
+
+async function remuxCopy(sourcePath, outputPath, summary, profile, jobId) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await runFfmpeg(remuxCopyArgs(sourcePath, outputPath, summary), {
+  await runFfmpeg(remuxCopyArgs(sourcePath, outputPath, summary, profile), ffmpegContext(profile, {
     mode: 'remux',
     sourcePath,
     outputPath,
-  });
+    sourceDurationSec: summary.durationSec,
+    jobId,
+  }));
 }
 
-async function remuxVideoCopy(sourcePath, outputPath, summary) {
+async function remuxVideoCopy(sourcePath, outputPath, summary, profile, jobId) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await runFfmpeg(remuxVideoCopyArgs(sourcePath, outputPath, summary), {
+  await runFfmpeg(remuxVideoCopyArgs(sourcePath, outputPath, summary, profile), ffmpegContext(profile, {
     mode: 'remux_video',
     sourcePath,
     outputPath,
-  });
+    sourceDurationSec: summary.durationSec,
+    jobId,
+  }));
 }
 
-async function transcodeToDelivery(sourcePath, outputPath, summary, probe) {
+async function transcodeToDelivery(sourcePath, outputPath, summary, probe, profile, jobId) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await runFfmpeg(transcodeToDeliveryArgs(sourcePath, outputPath, summary, probe), {
+  await runFfmpeg(transcodeToDeliveryArgs(sourcePath, outputPath, summary, probe, profile), ffmpegContext(profile, {
     mode: 'transcode',
     sourcePath,
     outputPath,
+    sourceDurationSec: summary.durationSec,
     hasAudio: hasAudioStream(probe),
-    preset: ffmpegPreset(),
-  });
+    preset: profile.preset,
+    crf: profile.crf,
+    tune: profile.tune,
+    jobId,
+  }));
 }
 
 /**
- * @returns {Promise<{ usedCopy: boolean, strategy: string, sourceSizeBytes: number, videoDurationSec: number|null, videoCodec: string|null, width: number|null, height: number|null }>}
+ * @returns {Promise<{ usedCopy: boolean, strategy: string, profileId: string, sourceSizeBytes: number, videoDurationSec: number|null, videoCodec: string|null, width: number|null, height: number|null }>}
  */
-async function produceDeliveryMp4(sourcePath, outputPath) {
+async function produceDeliveryMp4(sourcePath, outputPath, options = {}) {
+  const jobId = options.jobId || null;
   log.info('ffmpeg: анализ исходника', { sourcePath });
   const [probe, stat] = await Promise.all([probeMedia(sourcePath), fs.stat(sourcePath)]);
   const summary = probeSummary(probe);
@@ -278,26 +338,44 @@ async function produceDeliveryMp4(sourcePath, outputPath) {
   });
 
   const strategy = remuxStrategy(probe);
-  log.info('ffmpeg: режим', { strategy, outputPath, preset: ffmpegPreset() });
+  const profile = resolveConversionProfile(strategy, sourcePath, summary);
+  const estimate = estimateConversionForProfile(profile, summary);
+
+  log.info('ffmpeg: профиль', {
+    strategy,
+    profileId: profile.id,
+    profileLabel: profile.label,
+    outputPath,
+    preset: profile.preset || null,
+    crf: profile.crf || null,
+    tune: profile.tune || null,
+  });
+  log.info('ffmpeg: оценка времени конвертации', {
+    sourcePath,
+    outputPath,
+    strategy,
+    ...estimate,
+  });
 
   if (strategy === 'remux_copy') {
-    await remuxCopy(sourcePath, outputPath, summary);
-    return buildResult(true, strategy, summary);
+    await remuxCopy(sourcePath, outputPath, summary, profile, jobId);
+    return buildResult(true, strategy, profile.id, summary);
   }
   if (strategy === 'remux_video_copy') {
-    await remuxVideoCopy(sourcePath, outputPath, summary);
-    return buildResult(true, strategy, summary);
+    await remuxVideoCopy(sourcePath, outputPath, summary, profile, jobId);
+    return buildResult(true, strategy, profile.id, summary);
   }
 
-  log.info('ffmpeg: полная конвертация', { sourcePath, outputPath });
-  await transcodeToDelivery(sourcePath, outputPath, summary, probe);
-  return buildResult(false, strategy, summary);
+  log.info('ffmpeg: полная конвертация', { sourcePath, outputPath, profileId: profile.id });
+  await transcodeToDelivery(sourcePath, outputPath, summary, probe, profile, jobId);
+  return buildResult(false, strategy, profile.id, summary);
 }
 
-function buildResult(usedCopy, strategy, summary) {
+function buildResult(usedCopy, strategy, profileId, summary) {
   return {
     usedCopy,
     strategy,
+    profileId,
     sourceSizeBytes: summary.sizeBytes || 0,
     videoDurationSec: summary.durationSec > 0 ? summary.durationSec : null,
     videoCodec: summary.videoCodec,

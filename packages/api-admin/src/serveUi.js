@@ -12,7 +12,7 @@ function resolveUiDist() {
   return process.env.UI_DIST_PATH || UI_DIST;
 }
 
-const API_PATH_PREFIXES = ['/videos', '/users', '/config', '/conversion-logs', '/api-docs'];
+const API_PATH_PREFIXES = ['/videos', '/users', '/config', '/conversion-logs', '/transcode-jobs', '/api-docs'];
 
 function isApiPath(urlPath) {
   return API_PATH_PREFIXES.some((p) => urlPath === p || urlPath.startsWith(`${p}/`));

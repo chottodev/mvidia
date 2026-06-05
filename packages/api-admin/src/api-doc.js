@@ -61,7 +61,7 @@ module.exports = {
           attempt: { type: 'integer', minimum: 1 },
           status: {
             type: 'string',
-            enum: ['running', 'completed', 'failed', 'skipped'],
+            enum: ['running', 'completed', 'failed', 'skipped', 'cancelled'],
           },
           sourceSizeBytes: { type: 'integer', nullable: true },
           videoDurationSec: { type: 'number', nullable: true },
@@ -396,6 +396,47 @@ module.exports = {
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/ConversionLogList' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/transcode-jobs/{jobId}/cancel': {
+      post: {
+        operationId: 'cancelConversionJob',
+        summary: 'Отменить задачу конвертации (BullMQ)',
+        parameters: [
+          {
+            name: 'jobId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Отменено',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['cancelled', 'jobId'],
+                  properties: {
+                    cancelled: { type: 'boolean' },
+                    jobId: { type: 'string' },
+                    publicId: { type: 'string', nullable: true },
+                    jobState: { type: 'string', nullable: true },
+                  },
+                },
+              },
+            },
+          },
+          '409': {
+            description: 'Не удалось отменить',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Message' },
               },
             },
           },

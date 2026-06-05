@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import {
+  cancelConversionJob,
   listConversionLogs,
   type AdminAuth,
   type ConversionLogRow,
@@ -20,8 +21,27 @@ function statusLabel(status: string) {
   if (status === 'running') return 'в работе';
   if (status === 'completed') return 'завершено';
   if (status === 'failed') return 'ошибка';
+  if (status === 'cancelled') return 'отменено';
   if (status === 'skipped') return 'пропуск';
   return status;
+}
+
+function canCancel(row: ConversionLogRow) {
+  return row.status === 'running' && !!row.jobId;
+}
+
+async function cancelJob(row: ConversionLogRow) {
+  if (!row.jobId || !confirm(`Отменить конвертацию job ${row.jobId}?`)) return;
+  busy.value = true;
+  err.value = '';
+  try {
+    await cancelConversionJob(props.auth, row.jobId);
+    await refresh();
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : 'Ошибка отмены';
+  } finally {
+    busy.value = false;
+  }
 }
 
 function formatBytes(bytes: number | null) {
@@ -140,6 +160,7 @@ onMounted(() => {
         <tr>
           <th>Начало</th>
           <th>publicId</th>
+          <th>jobId</th>
           <th>Попытка</th>
           <th>Статус</th>
           <th>Исходник</th>
@@ -147,12 +168,14 @@ onMounted(() => {
           <th>Работа воркера</th>
           <th>Режим</th>
           <th>Результат</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="row in items" :key="row.id">
           <td>{{ new Date(row.startedAt).toLocaleString('ru-RU') }}</td>
           <td class="mono">{{ row.publicId }}</td>
+          <td class="mono">{{ row.jobId || '—' }}</td>
           <td>{{ row.attempt }}</td>
           <td>{{ statusLabel(row.status) }}</td>
           <td>{{ formatBytes(row.sourceSizeBytes) }}</td>
@@ -167,6 +190,17 @@ onMounted(() => {
               {{ row.errorMessage.length > 80 ? row.errorMessage.slice(0, 80) + '…' : row.errorMessage }}
             </span>
             <span v-else class="muted">—</span>
+          </td>
+          <td>
+            <button
+              v-if="canCancel(row)"
+              type="button"
+              class="danger"
+              :disabled="busy"
+              @click="cancelJob(row)"
+            >
+              Отменить
+            </button>
           </td>
         </tr>
       </tbody>

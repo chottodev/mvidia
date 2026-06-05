@@ -10,8 +10,10 @@ const {
 } = require('db');
 const { produceDeliveryMp4, deliveryFileSize } = require('./transcode');
 const { generatePosterFromVideo } = require('./poster');
+const { isTranscodeCancelled, clearTranscodeCancel } = require('./transcodeCancel');
 
 const log = createLogger('worker');
+const CANCEL_MESSAGE = 'Отменено администратором';
 
 async function resolveSourceSizeBytes(doc, sourceAbs) {
   if (doc.sourceSizeBytes > 0) return doc.sourceSizeBytes;
@@ -97,8 +99,12 @@ async function processTranscodeJob(publicId, uploadDirAbs, jobMeta = {}) {
   const posterAbs = videoPaths.posterPath(uploadDirAbs, doc.storageFileName);
 
   try {
+    if (await isTranscodeCancelled(jobId)) {
+      throw new Error(CANCEL_MESSAGE);
+    }
+
     const transcodeStarted = Date.now();
-    const transcodeMeta = await produceDeliveryMp4(sourceAbs, deliveryAbs);
+    const transcodeMeta = await produceDeliveryMp4(sourceAbs, deliveryAbs, { jobId });
     const sizeBytes = await deliveryFileSize(deliveryAbs);
     log.info('обработка: delivery готов', {
       publicId,
@@ -132,7 +138,7 @@ async function processTranscodeJob(publicId, uploadDirAbs, jobMeta = {}) {
       sourceSizeBytes: transcodeMeta.sourceSizeBytes ?? sourceSizeBytes,
       videoDurationSec: transcodeMeta.videoDurationSec,
       workDurationMs,
-      strategy: transcodeMeta.strategy,
+      strategy: transcodeMeta.profileId || transcodeMeta.strategy,
       usedCopy: transcodeMeta.usedCopy,
       deliverySizeBytes: sizeBytes,
       errorMessage: null,
@@ -145,26 +151,33 @@ async function processTranscodeJob(publicId, uploadDirAbs, jobMeta = {}) {
       totalDurationMs: workDurationMs,
     });
 
+    await clearTranscodeCancel(jobId);
     return { publicId, sizeBytes };
   } catch (e) {
     const message = (e && e.message) || 'Ошибка конвертации';
+    const cancelled =
+      message === CANCEL_MESSAGE || (jobId && (await isTranscodeCancelled(jobId)));
+
     doc.status = VIDEO_STATUS.FAILED;
-    doc.errorMessage = message;
+    doc.errorMessage = cancelled ? CANCEL_MESSAGE : message;
     doc.processingStep = undefined;
     await doc.save();
 
     const workDurationMs = Date.now() - startedAt;
     await finishConversionLog(conversionLogId, {
-      status: CONVERSION_LOG_STATUS.FAILED,
+      status: cancelled ? CONVERSION_LOG_STATUS.CANCELLED : CONVERSION_LOG_STATUS.FAILED,
       sourceSizeBytes,
       workDurationMs,
-      errorMessage: message,
+      errorMessage: cancelled ? CANCEL_MESSAGE : message,
     });
+
+    await clearTranscodeCancel(jobId);
 
     log.error('обработка: ошибка', {
       publicId,
-      status: VIDEO_STATUS.FAILED,
-      error: message,
+      jobId,
+      status: cancelled ? CONVERSION_LOG_STATUS.CANCELLED : VIDEO_STATUS.FAILED,
+      error: cancelled ? CANCEL_MESSAGE : message,
       totalDurationMs: workDurationMs,
     });
     throw e;

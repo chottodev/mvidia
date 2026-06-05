@@ -59,5 +59,6 @@ module.exports = {
     patchUser: userHandlers.patchUser,
     deleteUser: userHandlers.deleteUser,
     listConversionLogs: conversionLogHandlers.listConversionLogs,
+    cancelConversionJob: conversionLogHandlers.cancelConversionJob,
   },
 };

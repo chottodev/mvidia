@@ -1,4 +1,5 @@
 const { serializeConversionLog } = require('db');
+const { cancelTranscodeJob } = require('./transcodeQueue');
 
 async function listConversionLogs(req, res) {
   const { ConversionLog } = this.dependencies;
@@ -24,4 +25,23 @@ async function listConversionLogs(req, res) {
   return res.status(200).json({ total, items });
 }
 
-module.exports = { listConversionLogs };
+async function cancelConversionJob(req, res) {
+  const jobId = req.params.jobId;
+  if (!jobId || !String(jobId).trim()) {
+    return res.status(400).json({ message: 'jobId обязателен' });
+  }
+
+  const result = await cancelTranscodeJob(String(jobId).trim());
+  if (!result.cancelled) {
+    return res.status(409).json({ message: result.message || 'Не удалось отменить задачу' });
+  }
+
+  return res.status(200).json({
+    cancelled: true,
+    jobId: String(jobId).trim(),
+    publicId: result.publicId || null,
+    jobState: result.jobState || null,
+  });
+}
+
+module.exports = { listConversionLogs, cancelConversionJob };

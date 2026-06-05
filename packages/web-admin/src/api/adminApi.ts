@@ -144,7 +144,7 @@ export async function deleteUser(a: AdminAuth, id: string) {
   if (!res.ok) throw new Error(await parseApiError(res));
 }
 
-export type ConversionLogStatus = 'running' | 'completed' | 'failed' | 'skipped';
+export type ConversionLogStatus = 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
 
 export type ConversionLogRow = {
   id: string;
@@ -175,4 +175,19 @@ export async function listConversionLogs(
   if (res.status === 401) throw new Error('Неверный логин или пароль');
   if (!res.ok) throw new Error(await parseApiError(res));
   return res.json() as Promise<{ total: number; items: ConversionLogRow[] }>;
+}
+
+export async function cancelConversionJob(a: AdminAuth, jobId: string) {
+  const res = await fetch(`${adminApiBase()}/transcode-jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: 'POST',
+    headers: authHeader(a),
+  });
+  if (res.status === 401) throw new Error('Неверный логин или пароль');
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<{
+    cancelled: boolean;
+    jobId: string;
+    publicId: string | null;
+    jobState: string | null;
+  }>;
 }

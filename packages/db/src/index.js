@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Video = require('./Video');
 const User = require('./User');
 const ConversionLog = require('./ConversionLog');
-const { CONVERSION_LOG_STATUS } = require('./conversionLogConstants');
+const { CONVERSION_LOG_STATUS, TRANSCODE_QUEUE_NAME, transcodeCancelRedisKey } = require('./conversionLogConstants');
 const { serializeConversionLog } = require('./serializeConversionLog');
 const {
   VIDEO_STATUS,
@@ -58,6 +58,8 @@ module.exports = {
   User,
   ConversionLog,
   CONVERSION_LOG_STATUS,
+  TRANSCODE_QUEUE_NAME,
+  transcodeCancelRedisKey,
   serializeConversionLog,
   VIDEO_STATUS,
   PROCESSING_STEP,

@@ -44,6 +44,16 @@ const pageLink = computed(() =>
 
 const status = computed<VideoStatus | null>(() => meta.value?.status ?? null);
 
+const copyTip = computed(() =>
+  copied.value ? 'Ссылка скопирована' : 'Копировать ссылку на видео'
+);
+
+const frameTip = computed(() => {
+  if (frameSaved.value) return 'Кадр сохранён';
+  if (frameBusy.value) return 'Сохранение кадра…';
+  return 'Сохранить текущий кадр как PNG';
+});
+
 const processingLabel = computed(() => {
   const step = meta.value?.processingStep;
   if (step === 'converting') return 'Конвертируем видео…';
@@ -261,20 +271,42 @@ watch(publicId, () => {
             :src="playSrc"
             @error="onVideoError"
           />
-          <div class="player-actions">
+          <div class="watch-toolbar" role="toolbar" aria-label="Действия с видео">
             <button
               type="button"
-              class="frame-btn"
+              class="toolbar-btn"
+              :class="{ 'is-success': copied }"
+              :aria-label="copyTip"
+              @click="copyPageLink"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                />
+              </svg>
+              <span class="toolbar-tip" role="tooltip">{{ copyTip }}</span>
+            </button>
+            <button
+              type="button"
+              class="toolbar-btn"
+              :class="{ 'is-success': frameSaved }"
               :disabled="frameBusy"
+              :aria-label="frameTip"
               @click="saveFrame"
             >
-              {{ frameSaved ? 'Сохранено' : frameBusy ? 'Сохранение…' : 'Сохранить кадр' }}
+              <svg class="toolbar-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                />
+              </svg>
+              <span class="toolbar-tip" role="tooltip">{{ frameTip }}</span>
             </button>
-            <p class="frame-hint">Остановите видео на нужном моменте и нажмите кнопку.</p>
           </div>
         </template>
         <p v-if="playErr" class="err">{{ playErr }}</p>
-        <p v-if="frameErr" class="err">{{ frameErr }}</p>
+        <p v-if="copyErr || frameErr" class="err">{{ copyErr || frameErr }}</p>
       </div>
 
       <div class="below">
@@ -284,14 +316,6 @@ watch(publicId, () => {
         <p v-if="meta.authorName" class="author">Автор: {{ meta.authorName }}</p>
         <p v-if="meta.visibility === 'private'" class="badge">Только вы видите это видео</p>
         <p v-if="meta.description" class="description">{{ meta.description }}</p>
-
-        <div v-if="status === 'ready'" class="share">
-          <a class="share-link" :href="pageLink">{{ pageLink }}</a>
-          <button type="button" class="copy-btn" @click="copyPageLink">
-            {{ copied ? 'Скопировано' : 'Копировать ссылку' }}
-          </button>
-        </div>
-        <p v-if="copyErr" class="err">{{ copyErr }}</p>
       </div>
     </template>
   </div>
@@ -346,34 +370,77 @@ watch(publicId, () => {
 .media {
   margin-bottom: 1rem;
 }
-.player-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem 0.75rem;
-  margin-top: 0.65rem;
-}
-.frame-btn {
-  padding: 0.45rem 0.9rem;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
+.watch-toolbar {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-top: 0.5rem;
+  padding: 0.2rem;
   background: #fff;
-  color: #0f172a;
-  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.toolbar-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
-.frame-btn:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #94a3b8;
+.toolbar-btn:hover:not(:disabled),
+.toolbar-btn:focus-visible {
+  background: #f1f5f9;
+  color: #0f172a;
+  outline: none;
 }
-.frame-btn:disabled {
-  opacity: 0.65;
+.toolbar-btn:disabled {
+  opacity: 0.55;
   cursor: default;
 }
-.frame-hint {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #64748b;
+.toolbar-btn.is-success {
+  color: #15803d;
+}
+.toolbar-icon {
+  display: block;
+}
+.toolbar-tip {
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.toolbar-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #0f172a;
+}
+.toolbar-btn:hover .toolbar-tip,
+.toolbar-btn:focus-visible .toolbar-tip {
+  opacity: 1;
 }
 .below {
   display: flex;
@@ -394,27 +461,6 @@ watch(publicId, () => {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   margin: 0;
-}
-.share {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.25rem;
-}
-.share-link {
-  font-size: 0.9rem;
-  color: #2563eb;
-  word-break: break-all;
-}
-.copy-btn {
-  padding: 0.45rem 0.9rem;
-  border-radius: 6px;
-  border: none;
-  background: #0f172a;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
 }
 .uploaded-at {
   color: #64748b;

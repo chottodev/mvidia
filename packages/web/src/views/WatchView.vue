@@ -11,7 +11,9 @@ import {
   type VideoHidden,
   type VideoStatus,
 } from '../api/userApi';
+import { formatUploadedAt } from '../formatDate';
 import { logUi } from '../log';
+import { saveVideoFrameAsPng } from '../saveVideoFrame';
 
 const props = defineProps<{ publicId: string }>();
 
@@ -26,6 +28,11 @@ const playSrc = ref('');
 const playErr = ref('');
 const copyErr = ref('');
 const copied = ref(false);
+const videoEl = ref<HTMLVideoElement | null>(null);
+const frameBusy = ref(false);
+const frameErr = ref('');
+const frameSaved = ref(false);
+let frameSavedTimer: ReturnType<typeof setTimeout> | null = null;
 
 const POLL_MS = 3000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -88,6 +95,39 @@ function onVideoError() {
   playErr.value = 'Не удалось воспроизвести видео.';
 }
 
+function clearFrameSavedTimer() {
+  if (frameSavedTimer) {
+    clearTimeout(frameSavedTimer);
+    frameSavedTimer = null;
+  }
+}
+
+async function saveFrame() {
+  const video = videoEl.value;
+  if (!video || !meta.value) return;
+  frameErr.value = '';
+  frameBusy.value = true;
+  clearFrameSavedTimer();
+  frameSaved.value = false;
+  try {
+    await saveVideoFrameAsPng(video, meta.value.title || meta.value.publicId);
+    frameSaved.value = true;
+    frameSavedTimer = window.setTimeout(() => {
+      frameSaved.value = false;
+      frameSavedTimer = null;
+    }, 2000);
+    logUi('watch', 'кадр сохранён', {
+      publicId: meta.value.publicId,
+      currentTime: video.currentTime,
+    });
+  } catch (e) {
+    frameErr.value = e instanceof Error ? e.message : 'Не удалось сохранить кадр';
+    logUi('watch', 'кадр: сбой', { message: frameErr.value });
+  } finally {
+    frameBusy.value = false;
+  }
+}
+
 async function copyPageLink() {
   copyErr.value = '';
   copied.value = false;
@@ -114,6 +154,9 @@ async function load(opts?: { silent?: boolean }) {
     playErr.value = '';
     copyErr.value = '';
     copied.value = false;
+    frameErr.value = '';
+    clearFrameSavedTimer();
+    frameSaved.value = false;
   }
   const prevStatus = meta.value?.status;
   const prevStep = meta.value?.processingStep;
@@ -165,6 +208,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopPoll();
   revokeBlob();
+  clearFrameSavedTimer();
 });
 
 watch(publicId, () => {
@@ -207,18 +251,36 @@ watch(publicId, () => {
           {{ meta.errorMessage || 'Не удалось обработать видео' }}
         </p>
 
-        <video
-          v-else-if="status === 'ready' && playSrc"
-          class="player"
-          controls
-          playsinline
-          :src="playSrc"
-          @error="onVideoError"
-        />
+        <template v-else-if="status === 'ready' && playSrc">
+          <video
+            ref="videoEl"
+            class="player"
+            controls
+            playsinline
+            crossorigin="anonymous"
+            :src="playSrc"
+            @error="onVideoError"
+          />
+          <div class="player-actions">
+            <button
+              type="button"
+              class="frame-btn"
+              :disabled="frameBusy"
+              @click="saveFrame"
+            >
+              {{ frameSaved ? 'Сохранено' : frameBusy ? 'Сохранение…' : 'Сохранить кадр' }}
+            </button>
+            <p class="frame-hint">Остановите видео на нужном моменте и нажмите кнопку.</p>
+          </div>
+        </template>
         <p v-if="playErr" class="err">{{ playErr }}</p>
+        <p v-if="frameErr" class="err">{{ frameErr }}</p>
       </div>
 
       <div class="below">
+        <p v-if="meta.createdAt" class="uploaded-at">
+          Загружено {{ formatUploadedAt(meta.createdAt) }}
+        </p>
         <p v-if="meta.authorName" class="author">Автор: {{ meta.authorName }}</p>
         <p v-if="meta.visibility === 'private'" class="badge">Только вы видите это видео</p>
         <p v-if="meta.description" class="description">{{ meta.description }}</p>
@@ -284,6 +346,35 @@ watch(publicId, () => {
 .media {
   margin-bottom: 1rem;
 }
+.player-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.75rem;
+  margin-top: 0.65rem;
+}
+.frame-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 600;
+  cursor: pointer;
+}
+.frame-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.frame-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.frame-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
 .below {
   display: flex;
   flex-direction: column;
@@ -324,6 +415,11 @@ watch(publicId, () => {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+}
+.uploaded-at {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin: 0;
 }
 .author {
   color: #475569;

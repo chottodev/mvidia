@@ -6,6 +6,7 @@ import {
   type AdminAuth,
   type VideoRow,
 } from '../api/adminApi';
+import { formatUploadedAt } from '../formatDate';
 
 const props = defineProps<{
   auth: AdminAuth;
@@ -115,7 +116,7 @@ defineExpose({ refresh });
               <th>Видимость</th>
               <th>Статус</th>
           <th>Размер</th>
-          <th>Создано</th>
+          <th>Загружено</th>
           <th>Ссылка</th>
           <th></th>
         </tr>
@@ -128,7 +129,7 @@ defineExpose({ refresh });
               <td>{{ visibilityLabel(row.visibility) }}</td>
               <td>{{ statusLabel(row.status) }}</td>
           <td>{{ formatSize(row) }}</td>
-          <td>{{ new Date(row.createdAt).toLocaleString('ru-RU') }}</td>
+          <td>{{ formatUploadedAt(row.createdAt) }}</td>
           <td>
             <a
               v-if="row.status === 'ready'"

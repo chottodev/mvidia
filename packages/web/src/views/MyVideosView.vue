@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { listMyVideos } from '../api/authApi';
 import type { VideoMeta } from '../api/userApi';
+import { formatUploadedAt } from '../formatDate';
 
 const loading = ref(true);
 const err = ref('');
@@ -70,7 +71,7 @@ onMounted(() => {
         </RouterLink>
         <span class="meta">
           {{ visibilityLabel(row) }} · {{ statusLabel(row) }} ·
-          {{ new Date(row.createdAt).toLocaleString('ru-RU') }}
+          Загружено {{ formatUploadedAt(row.createdAt) }}
         </span>
         <RouterLink class="edit" :to="{ name: 'editVideo', params: { publicId: row.publicId } }">
           Изменить
